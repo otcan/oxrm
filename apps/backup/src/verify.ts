@@ -1,16 +1,36 @@
+import { backupRuns, createDatabase } from "@orkestr-crm/db";
+import { desc } from "drizzle-orm";
+import { access } from "node:fs/promises";
+import { join } from "node:path";
 import { loadBackupConfig } from "./config.js";
 
 const config = loadBackupConfig();
+const { db, queryClient } = createDatabase(config.databaseUrl);
 
-console.log(
-  JSON.stringify(
-    {
-      service: "orkestr-crm-backup-verify",
-      status: "ok",
-      gitRepo: config.githubRepo,
-      message: "Restore verification scaffold is ready; it will replay the latest dump into a temporary PostgreSQL database."
-    },
-    null,
-    2
-  )
-);
+try {
+  const latest = await db.query.backupRuns.findFirst({
+    where: (table, { eq }) => eq(table.status, "succeeded"),
+    orderBy: [desc(backupRuns.finishedAt)]
+  });
+
+  if (!latest?.artifactPath) {
+    throw new Error("No successful backup artifact found");
+  }
+
+  await access(join(config.workspace, latest.artifactPath));
+
+  console.log(
+    JSON.stringify(
+      {
+        service: "orkestr-crm-backup-verify",
+        status: "ok",
+        artifactPath: latest.artifactPath,
+        message: "Backup artifact exists. Full pg_restore replay should be run in an isolated database in CI/production."
+      },
+      null,
+      2
+    )
+  );
+} finally {
+  await queryClient.end();
+}

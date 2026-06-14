@@ -23,6 +23,9 @@ importers:
       '@fastify/cors':
         specifier: ^11.0.0
         version: 11.2.0
+      '@orkestr-crm/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@orkestr-crm/db':
         specifier: workspace:*
         version: link:../../packages/db
@@ -51,6 +54,25 @@ importers:
       '@orkestr-crm/db':
         specifier: workspace:*
         version: link:../../packages/db
+      drizzle-orm:
+        specifier: ^0.45.0
+        version: 0.45.2(postgres@3.4.9)
+    devDependencies:
+      tsx:
+        specifier: ^4.20.0
+        version: 4.22.4
+      typescript:
+        specifier: ^5.9.0
+        version: 5.9.3
+
+  apps/cli:
+    dependencies:
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.29.0
+        version: 1.29.0(zod@4.4.3)
+      zod:
+        specifier: ^4.0.0
+        version: 4.4.3
     devDependencies:
       tsx:
         specifier: ^4.20.0
@@ -64,6 +86,9 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.29.0
         version: 1.29.0(zod@4.4.3)
+      '@orkestr-crm/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@orkestr-crm/db':
         specifier: workspace:*
         version: link:../../packages/db
@@ -159,6 +184,21 @@ importers:
         specifier: ^5.9.0
         version: 5.9.3
 
+  packages/core:
+    dependencies:
+      '@orkestr-crm/db':
+        specifier: workspace:*
+        version: link:../db
+      '@orkestr-crm/shared':
+        specifier: workspace:*
+        version: link:../shared
+      drizzle-orm:
+        specifier: ^0.45.0
+        version: 0.45.2(postgres@3.4.9)
+      zod:
+        specifier: ^4.0.0
+        version: 4.4.3
+
   packages/db:
     dependencies:
       '@orkestr-crm/shared':
@@ -174,6 +214,9 @@ importers:
       drizzle-kit:
         specifier: ^0.31.0
         version: 0.31.10
+      tsx:
+        specifier: ^4.20.0
+        version: 4.22.4
 
   packages/shared:
     dependencies:

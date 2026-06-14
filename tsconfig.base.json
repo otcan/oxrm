@@ -17,9 +17,9 @@
     "exactOptionalPropertyTypes": true,
     "baseUrl": ".",
     "paths": {
+      "@orkestr-crm/core": ["packages/core/src/index.ts"],
       "@orkestr-crm/db": ["packages/db/src/index.ts"],
       "@orkestr-crm/shared": ["packages/shared/src/index.ts"]
     }
   }
 }
-

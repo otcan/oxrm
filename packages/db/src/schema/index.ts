@@ -62,6 +62,7 @@ export const integrationStatus = pgEnum("integration_status", [
   "error",
   "archived"
 ]);
+export const syncStatus = pgEnum("sync_status", ["running", "succeeded", "failed"]);
 
 export const agentType = pgEnum("agent_type", [
   "crm_operator",
@@ -179,6 +180,24 @@ export const integrationAccounts = pgTable(
     ...timestamps
   },
   (table) => [index("integration_accounts_provider_idx").on(table.provider)]
+);
+
+export const integrationSyncRuns = pgTable(
+  "integration_sync_runs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    integrationAccountId: uuid("integration_account_id")
+      .notNull()
+      .references(() => integrationAccounts.id, { onDelete: "cascade" }),
+    status: syncStatus("status").notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    importedLeads: integer("imported_leads").notNull().default(0),
+    importedActivities: integer("imported_activities").notNull().default(0),
+    error: text("error"),
+    resultJson: jsonb("result_json").notNull().default(sql`'{}'::jsonb`)
+  },
+  (table) => [index("integration_sync_runs_account_time_idx").on(table.integrationAccountId, table.startedAt)]
 );
 
 export const activities = pgTable(
@@ -309,3 +328,4 @@ export type Assignment = typeof assignments.$inferSelect;
 export type NewAssignment = typeof assignments.$inferInsert;
 export type Activity = typeof activities.$inferSelect;
 export type NewActivity = typeof activities.$inferInsert;
+export type IntegrationSyncRun = typeof integrationSyncRuns.$inferSelect;

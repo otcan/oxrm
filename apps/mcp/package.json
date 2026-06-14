@@ -5,12 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "start": "node dist/server.js",
+    "start": "node dist/apps/mcp/src/server.js",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "@orkestr-crm/core": "workspace:*",
     "@orkestr-crm/db": "workspace:*",
     "@orkestr-crm/shared": "workspace:*",
     "drizzle-orm": "^0.45.0",
@@ -22,4 +23,3 @@
     "typescript": "^5.9.0"
   }
 }
-

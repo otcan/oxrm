@@ -11,8 +11,12 @@
     "dev:api": "pnpm --filter @orkestr-crm/api dev",
     "dev:mcp": "pnpm --filter @orkestr-crm/mcp dev",
     "dev:web": "pnpm --filter @orkestr-crm/web start",
+    "crm": "pnpm --filter @orkestr-crm/cli start",
+    "smoke": "pnpm --filter @orkestr-crm/cli smoke",
     "db:generate": "pnpm --filter @orkestr-crm/db db:generate",
     "db:migrate": "pnpm --filter @orkestr-crm/db db:migrate",
+    "db:seed": "pnpm --filter @orkestr-crm/db db:seed",
+    "db:smoke": "pnpm --filter @orkestr-crm/db db:smoke",
     "compose:config": "docker compose config",
     "backup:run": "pnpm --filter @orkestr-crm/backup start",
     "backup:verify": "pnpm --filter @orkestr-crm/backup verify"
@@ -27,4 +31,3 @@
     "typescript": "^5.9.0"
   }
 }
-

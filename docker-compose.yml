@@ -32,6 +32,7 @@ services:
     command: pnpm --filter @orkestr-crm/api dev
     environment:
       NODE_ENV: development
+      CRM_API_PROXY_TARGET: http://api:3000
       LOG_LEVEL: ${LOG_LEVEL:-info}
       DATABASE_URL: postgres://${POSTGRES_USER:-orkestr}:${POSTGRES_PASSWORD:-orkestr}@postgres:5432/${POSTGRES_DB:-orkestr_crm}
       REDIS_URL: redis://redis:6379
@@ -69,7 +70,7 @@ services:
     build:
       context: .
       dockerfile: infra/docker/node.Dockerfile
-    command: pnpm --filter @orkestr-crm/web start
+    command: pnpm --filter @orkestr-crm/web start:container
     environment:
       NODE_ENV: development
     ports:
