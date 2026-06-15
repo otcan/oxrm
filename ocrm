@@ -1,0 +1,175 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$repo_root"
+
+instance="${CRM_INSTANCE:-demo}"
+
+usage() {
+  cat <<'EOF'
+Usage: ./ocrm [--instance name] <command> [args]
+
+Common commands:
+  setup              Create the local env file for the instance
+  start              Start Docker containers
+  stop               Stop Docker containers
+  restart            Restart Docker containers
+  status             Show containers
+  urls               Print local URLs
+  ready              Run migrate and baseline seed
+  demo               Seed public-safe demo data
+  test               Run DB smoke, health, and CLI smoke
+  cli [args]         Run CRM CLI inside Docker
+  tools              List MCP tools through the Dockerized CLI
+  logs [service]     Follow logs
+
+Instance commands:
+  new <name>         Create a new instance example from demo
+  instance [args]    Pass through to scripts/crm-instance
+
+Options:
+  -i, --instance     Instance name, default: demo
+
+Examples:
+  ./ocrm setup
+  ./ocrm start
+  ./ocrm ready
+  ./ocrm test
+  ./ocrm cli mcp:tools
+  ./ocrm -i client-a start
+EOF
+}
+
+run_instance() {
+  scripts/crm-instance "$instance" "$@"
+}
+
+ensure_instance_env() {
+  env_file="instances/${instance}.local.env"
+  example_env_file="instances/${instance}.env.example"
+  if [[ ! -f "$env_file" && -f "$example_env_file" ]]; then
+    run_instance init
+  fi
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -i|--instance)
+      if [[ $# -lt 2 ]]; then
+        echo "Missing instance name after $1" >&2
+        exit 2
+      fi
+      instance="$2"
+      shift 2
+      ;;
+    --instance=*)
+      instance="${1#*=}"
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+
+command="${1:-help}"
+if [[ $# -gt 0 ]]; then
+  shift
+fi
+
+case "$command" in
+  help)
+    usage
+    ;;
+  setup|init|install)
+    run_instance init
+    ;;
+  start|up)
+    ensure_instance_env
+    run_instance up
+    ;;
+  stop|down)
+    run_instance down
+    ;;
+  restart)
+    run_instance down
+    run_instance up
+    ;;
+  status|ps)
+    run_instance ps
+    ;;
+  urls)
+    run_instance urls
+    ;;
+  ready|bootstrap)
+    run_instance migrate
+    run_instance seed
+    ;;
+  test|smoke)
+    run_instance db-smoke
+    run_instance health
+    run_instance smoke
+    ;;
+  health)
+    run_instance health
+    ;;
+  migrate)
+    run_instance migrate
+    ;;
+  seed)
+    run_instance seed
+    ;;
+  demo|demo-seed)
+    run_instance demo-seed
+    ;;
+  db-smoke)
+    run_instance db-smoke
+    ;;
+  cli)
+    run_instance cli "$@"
+    ;;
+  tools)
+    run_instance cli mcp:tools
+    ;;
+  logs)
+    run_instance logs "$@"
+    ;;
+  backup)
+    run_instance backup
+    ;;
+  verify)
+    run_instance verify
+    ;;
+  new)
+    if [[ $# -lt 1 ]]; then
+      echo "Usage: ./ocrm new <name>" >&2
+      exit 2
+    fi
+    new_instance="$1"
+    example_file="instances/${new_instance}.env.example"
+    if [[ -e "$example_file" ]]; then
+      echo "$example_file already exists."
+    else
+      cp instances/demo.env.example "$example_file"
+      echo "Created $example_file. Edit ports and names before starting it."
+    fi
+    scripts/crm-instance "$new_instance" init
+    ;;
+  instance)
+    if [[ $# -lt 2 ]]; then
+      echo "Usage: ./ocrm instance <name> <command> [args]" >&2
+      exit 2
+    fi
+    scripts/crm-instance "$@"
+    ;;
+  *)
+    echo "Unknown command: $command" >&2
+    usage
+    exit 2
+    ;;
+esac

@@ -1,0 +1,354 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: scripts/crm-instance <instance> <command> [args]
+
+Commands:
+  init          Create instances/<instance>.local.env from the example
+  config        Render docker compose config when Compose is available
+  up            Start the instance
+  down          Stop the instance
+  ps            Show containers
+  logs [svc]    Follow logs
+  cli [args]    Run the CRM CLI inside the instance network
+  migrate       Run Drizzle migrations
+  seed          Seed initial data
+  demo-seed     Seed public-safe synthetic demo data
+  db-smoke      Run DB smoke check
+  health        Run CLI health check inside the instance network
+  smoke         Run CLI smoke check inside the instance network
+  backup        Run backup worker once
+  verify        Verify latest backup metadata
+  urls          Print local URLs
+EOF
+}
+
+if [[ $# -lt 2 ]]; then
+  usage
+  exit 2
+fi
+
+instance="$1"
+command="$2"
+shift 2
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+env_file="$repo_root/instances/${instance}.local.env"
+example_env_file="$repo_root/instances/${instance}.env.example"
+project="orkestr-crm-${instance}"
+image="${project}:local"
+
+if [[ "$command" == "init" ]]; then
+  if [[ ! -f "$example_env_file" ]]; then
+    echo "Unknown instance: $instance" >&2
+    exit 2
+  fi
+  if [[ -f "$env_file" ]]; then
+    echo "$env_file already exists."
+    exit 0
+  fi
+  cp "$example_env_file" "$env_file"
+  echo "Created $env_file. Review it before starting the instance."
+  exit 0
+fi
+
+if [[ ! -f "$env_file" ]]; then
+  if [[ -f "$example_env_file" ]]; then
+    echo "Missing $env_file. Copy $example_env_file and fill secrets." >&2
+  else
+    echo "Unknown instance: $instance" >&2
+  fi
+  exit 2
+fi
+
+cd "$repo_root"
+set -a
+# shellcheck source=/dev/null
+source "$env_file"
+set +a
+
+compose() {
+  docker compose --env-file "$env_file" -p "$project" "$@"
+}
+
+has_compose() {
+  docker compose version >/dev/null 2>&1
+}
+
+container_name() {
+  printf '%s-%s' "$project" "$1"
+}
+
+internal_database_url() {
+  printf 'postgres://%s:%s@postgres:5432/%s' "$POSTGRES_USER" "$POSTGRES_PASSWORD" "$POSTGRES_DB"
+}
+
+ensure_network() {
+  docker network inspect "$project" >/dev/null 2>&1 || docker network create "$project" >/dev/null
+}
+
+remove_container() {
+  docker rm -f "$(container_name "$1")" >/dev/null 2>&1 || true
+}
+
+wait_for_postgres() {
+  local postgres
+  postgres="$(container_name postgres)"
+  for _ in $(seq 1 60); do
+    if docker exec "$postgres" pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+  echo "Postgres did not become ready for $instance" >&2
+  return 1
+}
+
+direct_run_node_service() {
+  local service="$1"
+  local command="$2"
+  local port_args=()
+  shift 2
+
+  case "$service" in
+    api)
+      port_args=(-p "127.0.0.1:${HOST_API_PORT}:18181")
+      ;;
+    mcp)
+      port_args=(-p "127.0.0.1:${HOST_MCP_PORT}:18182")
+      ;;
+    web)
+      port_args=(-p "127.0.0.1:${HOST_WEB_PORT}:18180")
+      ;;
+  esac
+
+  remove_container "$service"
+  docker run -d \
+    --name "$(container_name "$service")" \
+    --network "$project" \
+    --network-alias "$service" \
+    "${port_args[@]}" \
+    -e NODE_ENV=development \
+    -e LOG_LEVEL="${LOG_LEVEL:-info}" \
+    -e DATABASE_URL="$(internal_database_url)" \
+    -e REDIS_URL=redis://redis:6379 \
+    -e API_HOST=0.0.0.0 \
+    -e API_PORT=18181 \
+    -e MCP_HOST=0.0.0.0 \
+    -e MCP_PORT=18182 \
+    -e WEB_PORT=18180 \
+    -e CRM_API_PROXY_TARGET=http://api:18181 \
+    "$image" \
+    bash -lc "$command" >/dev/null
+}
+
+direct_up() {
+  ensure_network
+  docker build -t "$image" -f infra/docker/node.Dockerfile . >/dev/null
+
+  remove_container postgres
+  docker run -d \
+    --name "$(container_name postgres)" \
+    --network "$project" \
+    --network-alias postgres \
+    -p "127.0.0.1:${HOST_POSTGRES_PORT}:5432" \
+    -v "${project}-postgres-data:/var/lib/postgresql/data" \
+    -e POSTGRES_DB="$POSTGRES_DB" \
+    -e POSTGRES_USER="$POSTGRES_USER" \
+    -e POSTGRES_PASSWORD="$POSTGRES_PASSWORD" \
+    postgres:17 >/dev/null
+
+  remove_container redis
+  docker run -d \
+    --name "$(container_name redis)" \
+    --network "$project" \
+    --network-alias redis \
+    -p "127.0.0.1:${HOST_REDIS_PORT}:6379" \
+    redis:8 >/dev/null
+
+  wait_for_postgres
+  direct_run_node_service api "scripts/crm run api"
+  direct_run_node_service mcp "scripts/crm run mcp"
+  direct_run_node_service web "scripts/crm dev web-container"
+  direct_run_node_service worker "scripts/crm run worker"
+  direct_run_node_service scheduler "scripts/crm run scheduler"
+}
+
+direct_down() {
+  for service in scheduler worker web mcp api redis postgres; do
+    remove_container "$service"
+  done
+}
+
+direct_exec_node() {
+  docker run --rm \
+    --network "$project" \
+    -e NODE_ENV=development \
+    -e DATABASE_URL="$(internal_database_url)" \
+    -e REDIS_URL=redis://redis:6379 \
+    "$image" \
+    "$@"
+}
+
+direct_cli() {
+  docker run --rm \
+    --network "$project" \
+    -e CRM_API_URL=http://api:18181 \
+    -e CRM_MCP_URL=http://mcp:18182/mcp \
+    "$image" \
+    scripts/crm cli "$@"
+}
+
+direct_backup() {
+  docker run --rm \
+    --network "$project" \
+    -e NODE_ENV=production \
+    -e DATABASE_URL="$(internal_database_url)" \
+    -e BACKUP_GITHUB_REPO="$BACKUP_GITHUB_REPO" \
+    -e BACKUP_GITHUB_TOKEN="${BACKUP_GITHUB_TOKEN:-}" \
+    -e BACKUP_GIT_AUTHOR_NAME="$BACKUP_GIT_AUTHOR_NAME" \
+    -e BACKUP_GIT_AUTHOR_EMAIL="$BACKUP_GIT_AUTHOR_EMAIL" \
+    -e BACKUP_WORKSPACE="$BACKUP_WORKSPACE" \
+    "$image" \
+    scripts/crm backup dev
+}
+
+direct_verify() {
+  docker run --rm \
+    --network "$project" \
+    -e NODE_ENV=production \
+    -e DATABASE_URL="$(internal_database_url)" \
+    -e BACKUP_GITHUB_REPO="$BACKUP_GITHUB_REPO" \
+    -e BACKUP_GITHUB_TOKEN="${BACKUP_GITHUB_TOKEN:-}" \
+    -e BACKUP_WORKSPACE="$BACKUP_WORKSPACE" \
+    "$image" \
+    scripts/crm backup verify-source
+}
+
+case "$command" in
+  config)
+    if has_compose; then
+      compose config
+    else
+      echo "Docker Compose is not installed; this instance runner will use direct Docker containers."
+    fi
+    ;;
+  up)
+    if has_compose; then
+      compose up -d --build
+    else
+      direct_up
+    fi
+    ;;
+  down)
+    if has_compose; then
+      compose down
+    else
+      direct_down
+    fi
+    ;;
+  ps)
+    if has_compose; then
+      compose ps
+    else
+      docker ps -a --filter "name=${project}-" --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
+    fi
+    ;;
+  logs)
+    if has_compose; then
+      compose logs -f "$@"
+    else
+      if [[ $# -eq 0 ]]; then
+        docker logs -f "$(container_name api)"
+      else
+        docker logs -f "$(container_name "$1")"
+      fi
+    fi
+    ;;
+  cli)
+    if has_compose; then
+      compose exec -T \
+        -e CRM_API_URL=http://api:18181 \
+        -e CRM_MCP_URL=http://mcp:18182/mcp \
+        api scripts/crm cli "$@"
+    else
+      direct_cli "$@"
+    fi
+    ;;
+  migrate)
+    if has_compose; then
+      compose exec -T api scripts/crm db migrate
+    else
+      direct_exec_node scripts/crm db migrate
+    fi
+    ;;
+  seed)
+    if has_compose; then
+      compose exec -T api scripts/crm db seed
+    else
+      direct_exec_node scripts/crm db seed
+    fi
+    ;;
+  demo-seed)
+    if has_compose; then
+      compose exec -T api scripts/crm db demo
+    else
+      direct_exec_node scripts/crm db demo
+    fi
+    ;;
+  db-smoke)
+    if has_compose; then
+      compose exec -T api scripts/crm db smoke
+    else
+      direct_exec_node scripts/crm db smoke
+    fi
+    ;;
+  health)
+    if has_compose; then
+      compose exec -T \
+        -e CRM_API_URL=http://api:18181 \
+        -e CRM_MCP_URL=http://mcp:18182/mcp \
+        api scripts/crm cli health
+    else
+      direct_cli health
+    fi
+    ;;
+  smoke)
+    if has_compose; then
+      compose exec -T \
+        -e CRM_API_URL=http://api:18181 \
+        -e CRM_MCP_URL=http://mcp:18182/mcp \
+        api scripts/crm cli smoke
+    else
+      direct_cli smoke
+    fi
+    ;;
+  backup)
+    if has_compose; then
+      compose exec -T backup scripts/crm backup dev
+    else
+      direct_backup
+    fi
+    ;;
+  verify)
+    if has_compose; then
+      compose exec -T backup scripts/crm backup verify-source
+    else
+      direct_verify
+    fi
+    ;;
+  urls)
+    printf 'Web: %s\n' "http://127.0.0.1:${HOST_WEB_PORT}"
+    printf 'API health: %s\n' "http://127.0.0.1:${HOST_API_PORT}/api/health"
+    printf 'MCP health: %s\n' "http://127.0.0.1:${HOST_MCP_PORT}/health"
+    ;;
+  -h|--help|help)
+    usage
+    ;;
+  *)
+    usage
+    exit 2
+    ;;
+esac

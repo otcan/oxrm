@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.angular/
+.turbo/
+.env
+.env.local
+coverage/
+*.log
+data/
+!.gitkeep
+.backups/
+**/.backups/
+instances/*.local.env

@@ -1,0 +1,22 @@
+{
+  "name": "@orkestr-crm/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/core/src/index.d.ts",
+      "import": "./dist/core/src/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@orkestr-crm/db": "workspace:*",
+    "@orkestr-crm/shared": "workspace:*",
+    "drizzle-orm": "^0.45.0",
+    "zod": "^4.0.0"
+  }
+}

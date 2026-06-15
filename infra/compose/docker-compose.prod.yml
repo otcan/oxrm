@@ -1,0 +1,37 @@
+services:
+  proxy:
+    image: caddy:2
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      ORKESTR_HOST: ${ORKESTR_HOST}
+      ORKESTR_ADMIN_USER: ${ORKESTR_ADMIN_USER}
+      ORKESTR_ADMIN_PASSWORD_HASH: ${ORKESTR_ADMIN_PASSWORD_HASH}
+    volumes:
+      - ../proxy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - web
+      - api
+      - mcp
+
+  api:
+    ports: []
+
+  mcp:
+    ports: []
+
+  web:
+    ports: []
+
+  postgres:
+    ports: []
+
+  redis:
+    ports: []
+
+volumes:
+  caddy-data:
+  caddy-config:

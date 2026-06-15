@@ -1,0 +1,177 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$repo_root"
+
+usage() {
+  cat <<'EOF'
+Usage: scripts/crm <command> [args]
+
+Commands:
+  build                         Build all workspaces
+  typecheck                     Typecheck all workspaces
+  check                         Alias for typecheck
+  dev <api|mcp|web|web-container|worker|scheduler|backup>
+                                Run one workspace in development mode
+  run <api|mcp|worker|scheduler|backup>
+                                Run one workspace from TypeScript source without watch mode
+  cli [args]                    Run the CRM CLI
+  smoke [args]                  Run the CLI smoke check from source
+  db <generate|migrate|seed|demo|smoke>
+                                Run database operations
+  backup <run|dev|verify|verify-source>
+                                Run or verify backups
+  compose config                Render Docker Compose config
+  instance <name> <command>     Manage an isolated CRM instance
+EOF
+}
+
+run_workspace_script() {
+  local workspace="$1"
+  local script="$2"
+  shift 2
+
+  if [[ $# -eq 0 ]]; then
+    exec pnpm --filter "$workspace" "$script"
+  fi
+
+  exec pnpm --filter "$workspace" "$script" -- "$@"
+}
+
+command="${1:-help}"
+if [[ $# -gt 0 ]]; then
+  shift
+fi
+
+case "$command" in
+  -h|--help|help)
+    usage
+    ;;
+  build)
+    exec pnpm -r build
+    ;;
+  check|typecheck)
+    exec pnpm -r typecheck
+    ;;
+  dev)
+    service="${1:-}"
+    if [[ -z "$service" ]]; then
+      usage
+      exit 2
+    fi
+    shift
+    case "$service" in
+      api|mcp|worker|scheduler|backup)
+        run_workspace_script "@orkestr-crm/$service" dev "$@"
+        ;;
+      web)
+        run_workspace_script "@orkestr-crm/web" start "$@"
+        ;;
+      web-container|web:container)
+        run_workspace_script "@orkestr-crm/web" start:container "$@"
+        ;;
+      *)
+        echo "Unknown dev service: $service" >&2
+        exit 2
+        ;;
+    esac
+    ;;
+  run)
+    service="${1:-}"
+    if [[ -z "$service" ]]; then
+      usage
+      exit 2
+    fi
+    shift
+    case "$service" in
+      api|mcp)
+        exec pnpm --filter "@orkestr-crm/$service" exec tsx src/server.ts "$@"
+        ;;
+      worker|scheduler)
+        exec pnpm --filter "@orkestr-crm/$service" exec tsx src/index.ts "$@"
+        ;;
+      backup)
+        exec pnpm --filter "@orkestr-crm/backup" exec tsx src/index.ts "$@"
+        ;;
+      *)
+        echo "Unknown run service: $service" >&2
+        exit 2
+        ;;
+    esac
+    ;;
+  cli)
+    run_workspace_script "@orkestr-crm/cli" dev "$@"
+    ;;
+  smoke)
+    run_workspace_script "@orkestr-crm/cli" smoke "$@"
+    ;;
+  db)
+    task="${1:-}"
+    if [[ -z "$task" ]]; then
+      usage
+      exit 2
+    fi
+    shift
+    case "$task" in
+      generate|migrate|seed|demo|smoke)
+        run_workspace_script "@orkestr-crm/db" "db:$task" "$@"
+        ;;
+      *)
+        echo "Unknown db task: $task" >&2
+        exit 2
+        ;;
+    esac
+    ;;
+  backup)
+    task="${1:-}"
+    if [[ -z "$task" ]]; then
+      usage
+      exit 2
+    fi
+    shift
+    case "$task" in
+      run)
+        run_workspace_script "@orkestr-crm/backup" start "$@"
+        ;;
+      dev|verify)
+        run_workspace_script "@orkestr-crm/backup" "$task" "$@"
+        ;;
+      verify-source)
+        if [[ $# -eq 0 ]]; then
+          exec pnpm --filter @orkestr-crm/backup exec tsx src/verify.ts
+        fi
+        exec pnpm --filter @orkestr-crm/backup exec tsx src/verify.ts -- "$@"
+        ;;
+      *)
+        echo "Unknown backup task: $task" >&2
+        exit 2
+        ;;
+    esac
+    ;;
+  compose)
+    task="${1:-}"
+    shift || true
+    case "$task" in
+      config)
+        exec docker compose config "$@"
+        ;;
+      *)
+        echo "Unknown compose task: $task" >&2
+        exit 2
+        ;;
+    esac
+    ;;
+  instance)
+    if [[ $# -lt 2 ]]; then
+      usage
+      exit 2
+    fi
+    exec scripts/crm-instance "$@"
+    ;;
+  *)
+    echo "Unknown command: $command" >&2
+    usage
+    exit 2
+    ;;
+esac

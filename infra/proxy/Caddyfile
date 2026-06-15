@@ -1,0 +1,19 @@
+{$ORKESTR_HOST} {
+  encode gzip zstd
+
+  basicauth /* {
+    {$ORKESTR_ADMIN_USER} {$ORKESTR_ADMIN_PASSWORD_HASH}
+  }
+
+  handle_path /api/* {
+    reverse_proxy api:3000
+  }
+
+  handle_path /mcp* {
+    reverse_proxy mcp:3010
+  }
+
+  handle {
+    reverse_proxy web:4200
+  }
+}

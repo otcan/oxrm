@@ -1,0 +1,53 @@
+{
+  "name": "orkestr-crm",
+  "version": "0.1.0",
+  "description": "MCP-first outreach ledger for agent-operated CRM workflows.",
+  "private": true,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/otcan/orkestr-crm.git"
+  },
+  "homepage": "https://github.com/otcan/orkestr-crm#readme",
+  "bugs": {
+    "url": "https://github.com/otcan/orkestr-crm/issues"
+  },
+  "keywords": [
+    "crm",
+    "mcp",
+    "outreach-ledger",
+    "agent-workflows",
+    "sales-operations"
+  ],
+  "packageManager": "pnpm@11.6.0",
+  "type": "module",
+  "scripts": {
+    "ops": "scripts/crm",
+    "instance": "scripts/crm instance",
+    "build": "scripts/crm build",
+    "check": "scripts/crm check",
+    "typecheck": "scripts/crm typecheck",
+    "dev:api": "scripts/crm dev api",
+    "dev:mcp": "scripts/crm dev mcp",
+    "dev:web": "scripts/crm dev web",
+    "crm": "scripts/crm cli",
+    "smoke": "scripts/crm smoke",
+    "db:generate": "scripts/crm db generate",
+    "db:migrate": "scripts/crm db migrate",
+    "db:seed": "scripts/crm db seed",
+    "db:demo": "scripts/crm db demo",
+    "db:smoke": "scripts/crm db smoke",
+    "compose:config": "scripts/crm compose config",
+    "backup:run": "scripts/crm backup run",
+    "backup:verify": "scripts/crm backup verify"
+  },
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=11.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
+  }
+}
