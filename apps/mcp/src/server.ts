@@ -12,10 +12,30 @@ function toContent(value: unknown) {
     content: [
       {
         type: "text" as const,
-        text: JSON.stringify(value, null, 2)
+        text: JSON.stringify(stripConnectorFields(value), null, 2)
       }
     ]
   };
+}
+
+function stripConnectorFields(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => stripConnectorFields(item));
+  }
+
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([key]) => key !== "integrationAccountId" && key !== "integrationAccount")
+        .map(([key, item]) => [key, stripConnectorFields(item)])
+    );
+  }
+
+  return value;
 }
 
 export async function buildMcpHttpServer() {
@@ -121,12 +141,73 @@ export async function buildMcpHttpServer() {
     );
 
     server.tool(
+      "crm.search",
+      "Search across leads, people, companies, tasks, and events. Returns stable CRM IDs grouped by record type.",
+      {
+        query: z.string().min(1),
+        limit: z.number().int().min(1).max(50).optional()
+      },
+      async (input) => toContent(await tools.services.search(input))
+    );
+
+    server.tool(
       "crm.get_lead",
       "Read one lead with assignments, activities, and bookings.",
       {
         leadId: z.string().uuid()
       },
       async (input) => toContent(await tools.services.getLead(input.leadId))
+    );
+
+    server.tool(
+      "crm.update_lead",
+      "Update allowed lead fields. Existing omitted fields are left unchanged.",
+      {
+        leadId: z.string().uuid(),
+        patch: z.object({
+          fullName: z.string().min(1).optional(),
+          firstName: z.string().optional(),
+          lastName: z.string().optional(),
+          company: z.string().optional(),
+          companyDomain: z.string().optional(),
+          website: z.string().url().optional(),
+          industry: z.string().optional(),
+          companySize: z.string().optional(),
+          title: z.string().optional(),
+          department: z.string().optional(),
+          seniority: z.string().optional(),
+          timezone: z.string().optional(),
+          linkedinUrl: z.string().url().optional(),
+          salesnavUrl: z.string().url().optional(),
+          email: z.string().email().optional(),
+          phone: z.string().optional(),
+          location: z.string().optional(),
+          source: z.string().optional(),
+          notes: z.string().optional(),
+          customFields: z.record(z.string(), z.unknown()).optional()
+        })
+      },
+      async (input) => toContent(await tools.services.updateLead(input.leadId, input.patch))
+    );
+
+    server.tool(
+      "crm.list_lead_events",
+      "List timeline events attached to one lead.",
+      {
+        leadId: z.string().uuid(),
+        limit: z.number().int().min(1).max(100).optional()
+      },
+      async (input) => toContent(await tools.services.listLeadActivities(input.leadId, input.limit))
+    );
+
+    server.tool(
+      "crm.list_lead_tasks",
+      "List tasks attached to one lead.",
+      {
+        leadId: z.string().uuid(),
+        limit: z.number().int().min(1).max(100).optional()
+      },
+      async (input) => toContent(await tools.services.listLeadTasks(input.leadId, input.limit))
     );
 
     server.tool(
@@ -161,9 +242,30 @@ export async function buildMcpHttpServer() {
       "List actionable CRM tasks.",
       {
         status: z.enum(["open", "in_progress", "blocked", "done", "canceled"]).optional(),
+        query: z.string().optional(),
         limit: z.number().int().min(1).max(100).optional()
       },
       async (input) => toContent(await tools.services.listTasks(input))
+    );
+
+    server.tool(
+      "crm.search_tasks",
+      "Search tasks by title, description, or idempotency key.",
+      {
+        query: z.string().min(1),
+        status: z.enum(["open", "in_progress", "blocked", "done", "canceled"]).optional(),
+        limit: z.number().int().min(1).max(100).optional()
+      },
+      async (input) => toContent(await tools.services.listTasks(input))
+    );
+
+    server.tool(
+      "crm.get_task",
+      "Read one task with linked lead, person, company, assignment, and task events.",
+      {
+        taskId: z.string().uuid()
+      },
+      async (input) => toContent(await tools.services.getTask(input.taskId))
     );
 
     server.tool(
@@ -206,6 +308,36 @@ export async function buildMcpHttpServer() {
         })
       },
       async (input) => toContent(await tools.services.updateTask(input.taskId, input.patch))
+    );
+
+    server.tool(
+      "crm.complete_task",
+      "Mark a task as done.",
+      {
+        taskId: z.string().uuid(),
+        completedAt: z.string().datetime().optional()
+      },
+      async (input) => toContent(await tools.services.completeTask(input.taskId, { completedAt: input.completedAt }))
+    );
+
+    server.tool(
+      "crm.postpone_task",
+      "Move a task to a new due date and keep it open.",
+      {
+        taskId: z.string().uuid(),
+        dueAt: z.string().datetime()
+      },
+      async (input) => toContent(await tools.services.postponeTask(input.taskId, { dueAt: input.dueAt }))
+    );
+
+    server.tool(
+      "crm.cancel_task",
+      "Cancel a task and optionally store a cancellation reason in task metadata.",
+      {
+        taskId: z.string().uuid(),
+        reason: z.string().optional()
+      },
+      async (input) => toContent(await tools.services.cancelTask(input.taskId, { reason: input.reason }))
     );
 
     server.tool(
@@ -373,9 +505,64 @@ export async function buildMcpHttpServer() {
         companyId: z.string().uuid().optional(),
         taskId: z.string().uuid().optional(),
         channel: z.enum(["linkedin", "salesnav", "email", "scheduler", "manual"]).optional(),
+        query: z.string().optional(),
         limit: z.number().int().min(1).max(100).optional()
       },
       async (input) => toContent(await tools.services.listActivities(input))
+    );
+
+    server.tool(
+      "crm.search_events",
+      "Search timeline events by subject, body, provider IDs, external IDs, or URLs.",
+      {
+        query: z.string().min(1),
+        leadId: z.string().uuid().optional(),
+        personId: z.string().uuid().optional(),
+        companyId: z.string().uuid().optional(),
+        taskId: z.string().uuid().optional(),
+        channel: z.enum(["linkedin", "salesnav", "email", "scheduler", "manual"]).optional(),
+        limit: z.number().int().min(1).max(100).optional()
+      },
+      async (input) => toContent(await tools.services.listActivities(input))
+    );
+
+    server.tool(
+      "crm.get_event",
+      "Read one timeline event with linked lead, person, company, task, and assignment.",
+      {
+        eventId: z.string().uuid()
+      },
+      async (input) => toContent(await tools.services.getActivity(input.eventId))
+    );
+
+    server.tool(
+      "crm.list_record_events",
+      "List events attached to one lead, person, company, or task.",
+      {
+        leadId: z.string().uuid().optional(),
+        personId: z.string().uuid().optional(),
+        companyId: z.string().uuid().optional(),
+        taskId: z.string().uuid().optional(),
+        limit: z.number().int().min(1).max(100).optional()
+      },
+      async (input) => toContent(await tools.services.listActivities(input))
+    );
+
+    server.tool(
+      "crm.add_note",
+      "Append a manual note event to a lead, person, company, or task timeline. Events remain append-only.",
+      {
+        leadId: z.string().uuid().optional(),
+        personId: z.string().uuid().optional(),
+        companyId: z.string().uuid().optional(),
+        taskId: z.string().uuid().optional(),
+        subject: z.string().optional(),
+        body: z.string().min(1),
+        idempotencyKey: z.string().optional(),
+        metadata: z.record(z.string(), z.unknown()).optional(),
+        occurredAt: z.string().datetime().optional()
+      },
+      async (input) => toContent(await tools.services.addNote(input))
     );
 
     server.tool(

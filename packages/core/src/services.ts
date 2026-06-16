@@ -884,13 +884,39 @@ export function createCrmServices({ db }: ServiceContext) {
       });
     },
 
-    async listTasks(input: { status?: string | undefined; limit?: number | undefined } = {}) {
+    async listTasks(input: { status?: string | undefined; query?: string | undefined; limit?: number | undefined } = {}) {
       const status = input.status as typeof tasks.$inferSelect.status | undefined;
+      const query = input.query
+        ? or(
+            ilike(tasks.title, `%${input.query}%`),
+            ilike(tasks.description, `%${input.query}%`),
+            ilike(tasks.idempotencyKey, `%${input.query}%`)
+          )
+        : undefined;
+      const where = [status ? eq(tasks.status, status) : undefined, query].filter(
+        (condition): condition is NonNullable<typeof condition> => condition !== undefined
+      );
       return db.query.tasks.findMany({
-        where: status ? eq(tasks.status, status) : undefined,
+        where: where.length > 0 ? and(...where) : undefined,
         with: { lead: true, person: true, company: true, assignment: true },
         orderBy: [desc(tasks.priority), desc(tasks.dueAt)],
         limit: input.limit ?? 100
+      });
+    },
+
+    async getTask(id: string) {
+      return db.query.tasks.findFirst({
+        where: eq(tasks.id, id),
+        with: { lead: true, person: true, company: true, assignment: true, events: true }
+      });
+    },
+
+    async listLeadTasks(leadId: string, limit = 100) {
+      return db.query.tasks.findMany({
+        where: eq(tasks.leadId, leadId),
+        with: { lead: true, person: true, company: true, assignment: true, events: true },
+        orderBy: [desc(tasks.priority), desc(tasks.dueAt)],
+        limit
       });
     },
 
@@ -969,6 +995,30 @@ export function createCrmServices({ db }: ServiceContext) {
       return updated;
     },
 
+    async completeTask(id: string, input: { completedAt?: string | undefined } = {}) {
+      return this.updateTask(id, {
+        status: "done",
+        dueAt: null,
+        metadata: {
+          completedAt: input.completedAt ?? new Date().toISOString()
+        }
+      });
+    },
+
+    async postponeTask(id: string, input: { dueAt: string }) {
+      return this.updateTask(id, {
+        status: "open",
+        dueAt: input.dueAt
+      });
+    },
+
+    async cancelTask(id: string, input: { reason?: string | undefined } = {}) {
+      return this.updateTask(id, {
+        status: "canceled",
+        metadata: input.reason ? { cancelReason: input.reason } : undefined
+      });
+    },
+
     async listActivities(
       input: {
         leadId?: string | undefined;
@@ -976,15 +1026,27 @@ export function createCrmServices({ db }: ServiceContext) {
         companyId?: string | undefined;
         taskId?: string | undefined;
         channel?: string | undefined;
+        query?: string | undefined;
         limit?: number | undefined;
       } = {}
     ) {
+      const query = input.query
+        ? or(
+            ilike(activities.subject, `%${input.query}%`),
+            ilike(activities.body, `%${input.query}%`),
+            ilike(activities.providerThreadId, `%${input.query}%`),
+            ilike(activities.providerMessageId, `%${input.query}%`),
+            ilike(activities.externalId, `%${input.query}%`),
+            ilike(activities.externalUrl, `%${input.query}%`)
+          )
+        : undefined;
       const conditions = [
         input.leadId ? eq(activities.leadId, input.leadId) : undefined,
         input.personId ? eq(activities.personId, input.personId) : undefined,
         input.companyId ? eq(activities.companyId, input.companyId) : undefined,
         input.taskId ? eq(activities.taskId, input.taskId) : undefined,
-        input.channel ? eq(activities.channel, input.channel as typeof activities.$inferSelect.channel) : undefined
+        input.channel ? eq(activities.channel, input.channel as typeof activities.$inferSelect.channel) : undefined,
+        query
       ].filter((condition): condition is NonNullable<typeof condition> => condition !== undefined);
 
       return db.query.activities.findMany({
@@ -993,6 +1055,52 @@ export function createCrmServices({ db }: ServiceContext) {
         orderBy: [desc(activities.occurredAt)],
         limit: input.limit ?? 100
       });
+    },
+
+    async getActivity(id: string) {
+      return db.query.activities.findFirst({
+        where: eq(activities.id, id),
+        with: { lead: true, person: true, company: true, task: true, assignment: true }
+      });
+    },
+
+    async addNote(input: {
+      leadId?: string | undefined;
+      personId?: string | undefined;
+      companyId?: string | undefined;
+      taskId?: string | undefined;
+      subject?: string | undefined;
+      body: string;
+      idempotencyKey?: string | undefined;
+      metadata?: Record<string, unknown> | undefined;
+      occurredAt?: string | undefined;
+    }) {
+      return this.logActivity({
+        ...input,
+        type: "manual_note",
+        channel: "manual",
+        direction: "internal"
+      });
+    },
+
+    async search(input: { query: string; limit?: number | undefined }) {
+      const limit = input.limit ?? 25;
+      const [leadResults, peopleResults, companyResults, taskResults, eventResults] = await Promise.all([
+        this.listLeads({ query: input.query, limit }),
+        this.listPeople({ query: input.query, limit }),
+        this.listCompanies({ query: input.query, limit }),
+        this.listTasks({ query: input.query, limit }),
+        this.listActivities({ query: input.query, limit })
+      ]);
+
+      return {
+        query: input.query,
+        leads: leadResults,
+        people: peopleResults,
+        companies: companyResults,
+        tasks: taskResults,
+        events: eventResults
+      };
     },
 
     async logActivity(input: unknown) {
