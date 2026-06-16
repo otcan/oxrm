@@ -3,7 +3,18 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from "@a
 import { FormsModule } from "@angular/forms";
 import { CrmApiService } from "./crm-api.service";
 import { DetailPanelComponent } from "./detail-panel.component";
-import { DetailSelection, EventRow, LeadEditForm, LeadRow, Metric, NavItem, TaskEditForm, TaskRow } from "./models";
+import {
+  DetailSelection,
+  EventRow,
+  LeadEditForm,
+  LeadRow,
+  Metric,
+  NavItem,
+  TaskEditForm,
+  TaskRow,
+  ViewDefinition,
+  ViewRunResult
+} from "./models";
 
 @Component({
   selector: "oc-root",
@@ -15,13 +26,18 @@ import { DetailSelection, EventRow, LeadEditForm, LeadRow, Metric, NavItem, Task
 export class AppComponent {
   private readonly api = inject(CrmApiService);
 
-  readonly navItems: NavItem[] = ["Dashboard", "Leads", "Tasks", "Events", "Settings"];
+  readonly navItems: NavItem[] = ["Dashboard", "Views", "Leads", "Tasks", "Events", "Settings"];
   readonly selectedNav = signal<NavItem>("Dashboard");
   readonly backupHealth = signal<"ok" | "degraded">("degraded");
   readonly leads = signal<LeadRow[]>([]);
   readonly tasks = signal<TaskRow[]>([]);
   readonly queue = signal<TaskRow[]>([]);
   readonly events = signal<EventRow[]>([]);
+  readonly views = signal<ViewDefinition[]>([]);
+  readonly selectedViewKey = signal<string | null>(null);
+  readonly viewResult = signal<ViewRunResult | null>(null);
+  readonly viewLoading = signal(false);
+  readonly viewError = signal<string | null>(null);
   readonly selectedDetail = signal<DetailSelection | null>(null);
   readonly leadActivities = signal<EventRow[]>([]);
   readonly detailLoading = signal(false);
@@ -42,10 +58,16 @@ export class AppComponent {
     { label: "Events", value: String(this.events().length), tone: "good" }
   ]);
 
+  readonly selectedView = computed(() => this.views().find((view) => view.key === this.selectedViewKey()) ?? this.views()[0] ?? null);
+  readonly visibleViewRows = computed(() => this.viewResult()?.rows ?? []);
+  readonly visibleViewColumns = computed(() => this.viewResult()?.view.columns ?? this.selectedView()?.columns ?? []);
+
   readonly subtitle = computed(() => {
     switch (this.selectedNav()) {
       case "Dashboard":
-        return "CRM state at a glance: due work, recent leads, and event timeline.";
+        return "oXRM state at a glance: due work, recent records, and event timeline.";
+      case "Views":
+        return "Configured table views over generic object types and template-owned records.";
       case "Leads":
         return "Identity-resolved people and company workflow records.";
       case "Tasks":
@@ -63,15 +85,19 @@ export class AppComponent {
 
   selectNav(item: NavItem) {
     this.selectedNav.set(item);
+    if (item === "Views" && !this.viewResult()) {
+      void this.runSelectedView();
+    }
   }
 
   async refresh() {
-    const [health, leads, queue, tasks, events] = await Promise.all([
+    const [health, leads, queue, tasks, events, views] = await Promise.all([
       this.api.health().catch(() => ({ status: "degraded" as const })),
       this.api.listLeads().catch(() => []),
       this.api.listDueTasks().catch(() => []),
       this.api.listTasks().catch(() => []),
-      this.api.listEvents().catch(() => [])
+      this.api.listEvents().catch(() => []),
+      this.api.listViews().catch(() => [])
     ]);
 
     this.backupHealth.set(health.status === "ok" ? "ok" : "degraded");
@@ -79,7 +105,37 @@ export class AppComponent {
     this.queue.set(queue);
     this.tasks.set(tasks);
     this.events.set(events);
+    this.views.set(views);
+    if (!this.selectedViewKey() && views.length > 0) {
+      this.selectedViewKey.set(views[0]?.key ?? null);
+    }
+    if (this.selectedViewKey() && (!this.viewResult() || this.selectedNav() === "Views")) {
+      await this.runSelectedView();
+    }
     this.syncSelectedFromLists();
+  }
+
+  selectView(view: ViewDefinition) {
+    this.selectedViewKey.set(view.key);
+    this.selectedNav.set("Views");
+    void this.runSelectedView();
+  }
+
+  async runSelectedView() {
+    const key = this.selectedViewKey() ?? this.views()[0]?.key;
+    if (!key) {
+      return;
+    }
+
+    this.viewLoading.set(true);
+    this.viewError.set(null);
+    try {
+      this.viewResult.set(await this.api.runView(key));
+    } catch (error) {
+      this.viewError.set(error instanceof Error ? error.message : "Could not run view.");
+    } finally {
+      this.viewLoading.set(false);
+    }
   }
 
   async createLead() {
@@ -146,6 +202,70 @@ export class AppComponent {
   isSelected(kind: DetailSelection["kind"], id: string) {
     const selected = this.selectedDetail();
     return selected?.kind === kind && selected.item.id === id;
+  }
+
+  eventTitle(event: EventRow) {
+    if (event.subject) {
+      return event.subject;
+    }
+    const leadName = event.lead?.fullName;
+    if ((event.type === "connection_sent" || event.type === "connection_request_sent") && leadName) {
+      return `Connection request sent: ${leadName}`;
+    }
+    return event.type.replaceAll("_", " ");
+  }
+
+  eventSubtitle(event: EventRow) {
+    const metadata = event.metadata ?? {};
+    return [
+      event.channel,
+      event.direction,
+      event.lead?.fullName,
+      metadata.noteStatus ? `note ${String(metadata.noteStatus).replaceAll("_", " ")}` : undefined,
+      metadata.sourceQuery ? `query ${metadata.sourceQuery}` : undefined,
+      event.taskId ? "task linked" : "task unlinked"
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  }
+
+  eventSnippet(event: EventRow) {
+    const metadata = event.metadata ?? {};
+    const text = event.body || metadata.proposedNote || metadata.rowText || metadata.linkedinResult || "";
+    return this.truncate(String(text), 150);
+  }
+
+  columnLabel(column: string) {
+    return column
+      .replace(/^fields\./, "")
+      .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+      .replace(/[_.-]+/g, " ")
+      .replace(/\b\w/g, (letter) => letter.toUpperCase());
+  }
+
+  viewCell(row: Record<string, unknown>, column: string) {
+    const value = column.split(".").reduce<unknown>((current, segment) => {
+      if (!current || typeof current !== "object") {
+        return undefined;
+      }
+      return (current as Record<string, unknown>)[segment];
+    }, row);
+
+    if (value === undefined || value === null || value === "") {
+      return "-";
+    }
+    if (typeof value === "object") {
+      return JSON.stringify(value);
+    }
+    if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}T/.test(value)) {
+      return new Date(value).toLocaleString();
+    }
+    return String(value);
+  }
+
+  private truncate(value: string, maxLength: number) {
+    const compacted = value.trim().replace(/\s+/g, " ");
+    return compacted.length > maxLength ? `${compacted.slice(0, maxLength - 1)}...` : compacted;
   }
 
   async saveLead(form: LeadEditForm) {

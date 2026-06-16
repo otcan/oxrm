@@ -12,7 +12,7 @@ Commands:
   down          Stop the instance
   ps            Show containers
   logs [svc]    Follow logs
-  cli [args]    Run the CRM CLI inside the instance network
+  cli [args]    Run the oXRM CLI inside the instance network
   migrate       Run Drizzle migrations
   seed          Seed initial data
   demo-seed     Seed public-safe synthetic demo data
@@ -22,6 +22,7 @@ Commands:
   backup        Run backup worker once
   verify        Verify latest backup metadata
   urls          Print local URLs
+  upgrade       Safely update one instance: backup, migrate, seed, restart, smoke
 EOF
 }
 
@@ -39,6 +40,8 @@ env_file="$repo_root/instances/${instance}.local.env"
 example_env_file="$repo_root/instances/${instance}.env.example"
 project="orkestr-crm-${instance}"
 image="${project}:local"
+app_services=(scheduler worker web mcp api backup)
+node_services=(api mcp web worker scheduler backup)
 
 if [[ "$command" == "init" ]]; then
   if [[ ! -f "$example_env_file" ]]; then
@@ -139,6 +142,7 @@ direct_run_node_service() {
     -e MCP_HOST=0.0.0.0 \
     -e MCP_PORT=18182 \
     -e WEB_PORT=18180 \
+    -e OXRM_API_PROXY_TARGET=http://api:18181 \
     -e CRM_API_PROXY_TARGET=http://api:18181 \
     "$image" \
     bash -lc "$command" >/dev/null
@@ -192,39 +196,226 @@ direct_exec_node() {
     "$@"
 }
 
+backup_workspace_host_path() {
+  if [[ "${BACKUP_WORKSPACE:-}" = /* ]]; then
+    printf '%s' "$BACKUP_WORKSPACE"
+  else
+    printf '%s/%s' "$repo_root" "${BACKUP_WORKSPACE:-.backups/${instance}}"
+  fi
+}
+
 direct_cli() {
   docker run --rm \
     --network "$project" \
     -e CRM_API_URL=http://api:18181 \
+    -e OXRM_API_URL=http://api:18181 \
     -e CRM_MCP_URL=http://mcp:18182/mcp \
+    -e OXRM_MCP_URL=http://mcp:18182/mcp \
     "$image" \
     scripts/crm cli "$@"
 }
 
 direct_backup() {
+  local backup_workspace
+  backup_workspace="$(backup_workspace_host_path)"
+  mkdir -p "$backup_workspace"
   docker run --rm \
     --network "$project" \
-    -e NODE_ENV=production \
+    -v "${backup_workspace}:/backup-workspace" \
+    -e NODE_ENV="${NODE_ENV:-development}" \
     -e DATABASE_URL="$(internal_database_url)" \
     -e BACKUP_GITHUB_REPO="$BACKUP_GITHUB_REPO" \
     -e BACKUP_GITHUB_TOKEN="${BACKUP_GITHUB_TOKEN:-}" \
     -e BACKUP_GIT_AUTHOR_NAME="$BACKUP_GIT_AUTHOR_NAME" \
     -e BACKUP_GIT_AUTHOR_EMAIL="$BACKUP_GIT_AUTHOR_EMAIL" \
-    -e BACKUP_WORKSPACE="$BACKUP_WORKSPACE" \
+    -e BACKUP_WORKSPACE=/backup-workspace \
     "$image" \
     scripts/crm backup dev
 }
 
 direct_verify() {
+  local backup_workspace
+  backup_workspace="$(backup_workspace_host_path)"
+  mkdir -p "$backup_workspace"
   docker run --rm \
     --network "$project" \
-    -e NODE_ENV=production \
+    -v "${backup_workspace}:/backup-workspace" \
+    -e NODE_ENV="${NODE_ENV:-development}" \
     -e DATABASE_URL="$(internal_database_url)" \
     -e BACKUP_GITHUB_REPO="$BACKUP_GITHUB_REPO" \
     -e BACKUP_GITHUB_TOKEN="${BACKUP_GITHUB_TOKEN:-}" \
-    -e BACKUP_WORKSPACE="$BACKUP_WORKSPACE" \
+    -e BACKUP_WORKSPACE=/backup-workspace \
     "$image" \
     scripts/crm backup verify-source
+}
+
+compose_run_node() {
+  compose run --rm --no-deps api "$@"
+}
+
+compose_stop_app_services() {
+  compose stop "${app_services[@]}" >/dev/null || true
+}
+
+compose_start_app_services() {
+  compose up -d "${node_services[@]}"
+}
+
+compose_cli() {
+  compose exec -T \
+    -e OXRM_API_URL=http://api:18181 \
+    -e CRM_API_URL=http://api:18181 \
+    -e OXRM_MCP_URL=http://mcp:18182/mcp \
+    -e CRM_MCP_URL=http://mcp:18182/mcp \
+    api scripts/crm cli "$@"
+}
+
+compose_wait_for_app() {
+  for _ in $(seq 1 60); do
+    if compose_cli health >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+  echo "API/MCP did not become ready for $instance" >&2
+  compose ps >&2 || true
+  return 1
+}
+
+direct_stop_app_services() {
+  for service in "${app_services[@]}"; do
+    remove_container "$service"
+  done
+}
+
+direct_start_app_services() {
+  direct_run_node_service api "scripts/crm run api"
+  direct_run_node_service mcp "scripts/crm run mcp"
+  direct_run_node_service web "scripts/crm dev web-container"
+  direct_run_node_service worker "scripts/crm run worker"
+  direct_run_node_service scheduler "scripts/crm run scheduler"
+}
+
+direct_wait_for_app() {
+  for _ in $(seq 1 60); do
+    if direct_cli health >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+  echo "API/MCP did not become ready for $instance" >&2
+  docker ps -a --filter "name=${project}-" --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' >&2 || true
+  return 1
+}
+
+parse_upgrade_flags() {
+  upgrade_skip_backup=false
+  upgrade_skip_smoke=false
+  upgrade_skip_seed=false
+  upgrade_skip_build=false
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --skip-backup)
+        upgrade_skip_backup=true
+        ;;
+      --skip-smoke)
+        upgrade_skip_smoke=true
+        ;;
+      --skip-seed)
+        upgrade_skip_seed=true
+        ;;
+      --skip-build)
+        upgrade_skip_build=true
+        ;;
+      -h|--help)
+        cat <<'EOF'
+Usage: ./oxrm -i <instance> upgrade [--skip-backup] [--skip-smoke] [--skip-seed] [--skip-build]
+
+Default upgrade flow:
+  1. Ensure data services are running.
+  2. Run and verify a backup.
+  3. Stop app/writer services while keeping Postgres and Redis running.
+  4. Build the app image.
+  5. Run migrations once.
+  6. Run idempotent seed.
+  7. Restart app services.
+  8. Run health and smoke checks.
+
+Use --skip-backup only for disposable local instances.
+EOF
+        exit 0
+        ;;
+      *)
+        echo "Unknown upgrade flag: $1" >&2
+        exit 2
+        ;;
+    esac
+    shift
+  done
+}
+
+compose_upgrade() {
+  compose up -d postgres redis
+
+  if [[ "$upgrade_skip_backup" == false ]]; then
+    compose up -d backup
+    compose exec -T backup scripts/crm backup dev
+    compose exec -T backup scripts/crm backup verify-source
+  else
+    echo "Skipping backup for $instance. Do not use --skip-backup for production upgrades." >&2
+  fi
+
+  compose_stop_app_services
+  if [[ "$upgrade_skip_build" == false ]]; then
+    compose build
+  fi
+  compose_run_node scripts/crm db migrate
+  if [[ "$upgrade_skip_seed" == false ]]; then
+    compose_run_node scripts/crm db seed
+  fi
+  compose_start_app_services
+
+  if [[ "$upgrade_skip_smoke" == false ]]; then
+    compose_wait_for_app
+    compose_cli health
+    compose_cli smoke
+  fi
+}
+
+direct_upgrade() {
+  ensure_network
+  if ! docker image inspect "$image" >/dev/null 2>&1 && [[ "$upgrade_skip_build" == false ]]; then
+    docker build -t "$image" -f infra/docker/node.Dockerfile . >/dev/null
+  fi
+
+  if ! docker inspect "$(container_name postgres)" >/dev/null 2>&1 || ! docker inspect "$(container_name redis)" >/dev/null 2>&1; then
+    direct_up
+  fi
+  wait_for_postgres
+
+  if [[ "$upgrade_skip_backup" == false ]]; then
+    direct_backup
+    direct_verify
+  else
+    echo "Skipping backup for $instance. Do not use --skip-backup for production upgrades." >&2
+  fi
+
+  direct_stop_app_services
+  if [[ "$upgrade_skip_build" == false ]]; then
+    docker build -t "$image" -f infra/docker/node.Dockerfile . >/dev/null
+  fi
+  direct_exec_node scripts/crm db migrate
+  if [[ "$upgrade_skip_seed" == false ]]; then
+    direct_exec_node scripts/crm db seed
+  fi
+  direct_start_app_services
+
+  if [[ "$upgrade_skip_smoke" == false ]]; then
+    direct_wait_for_app
+    direct_cli health
+    direct_cli smoke
+  fi
 }
 
 case "$command" in
@@ -270,7 +461,9 @@ case "$command" in
   cli)
     if has_compose; then
       compose exec -T \
+        -e OXRM_API_URL=http://api:18181 \
         -e CRM_API_URL=http://api:18181 \
+        -e OXRM_MCP_URL=http://mcp:18182/mcp \
         -e CRM_MCP_URL=http://mcp:18182/mcp \
         api scripts/crm cli "$@"
     else
@@ -308,7 +501,9 @@ case "$command" in
   health)
     if has_compose; then
       compose exec -T \
+        -e OXRM_API_URL=http://api:18181 \
         -e CRM_API_URL=http://api:18181 \
+        -e OXRM_MCP_URL=http://mcp:18182/mcp \
         -e CRM_MCP_URL=http://mcp:18182/mcp \
         api scripts/crm cli health
     else
@@ -337,6 +532,14 @@ case "$command" in
       compose exec -T backup scripts/crm backup verify-source
     else
       direct_verify
+    fi
+    ;;
+  upgrade)
+    parse_upgrade_flags "$@"
+    if has_compose; then
+      compose_upgrade
+    else
+      direct_upgrade
     fi
     ;;
   urls)

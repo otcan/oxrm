@@ -2,7 +2,7 @@
 
 ## Summary
 
-There are open-source projects close to the Orkestr CRM direction, but no exact match for all current hard requirements:
+There are open-source projects close to the oXRM direction, but no exact match for all current hard requirements:
 
 - Angular with Signals
 - Fastify
@@ -11,7 +11,7 @@ There are open-source projects close to the Orkestr CRM direction, but no exact 
 - multi-instance runtime
 - mandatory daily GitHub backups
 - scheduler with external calendar reads
-- SalesNav, LinkedIn, and email connectors
+- SalesNav, LinkedIn, email, and template-driven non-sales workflows
 - MCP-first and agent-first operation
 - branch and PR workflow for coding agents
 
@@ -36,7 +36,7 @@ Why it matters:
 Tradeoffs:
 
 - Stack is Laravel, Filament, Livewire, PHP, not Angular/Fastify/Drizzle.
-- Not tailored to LinkedIn/SalesNav outreach flows by default.
+- Not tailored to LinkedIn/SalesNav outreach or job-search relationship flows by default.
 - Does not appear to include our required daily GitHub backup enforcement model.
 - Would mean adopting their platform direction instead of our planned TypeScript-first architecture.
 
@@ -69,7 +69,7 @@ Verdict:
 
 - Best large CRM platform reference.
 - Viable if we want to build on an existing CRM object/workflow platform.
-- Less aligned with our current architecture than a greenfield TypeScript monorepo.
+- Less aligned with our current architecture than a focused TypeScript monorepo with template-owned object views.
 
 ### Twenty CRM MCP Server
 
@@ -139,7 +139,7 @@ Verdict:
 
 ## Recommendation
 
-Use Relaticle as the immediate benchmark and Twenty as the large-platform reference, but keep Orkestr CRM greenfield if the hard stack requirements remain:
+Use Relaticle as the immediate benchmark and Twenty as the large-platform reference, but keep oXRM greenfield if the hard stack requirements remain:
 
 - Angular with Signals
 - Fastify
@@ -147,9 +147,11 @@ Use Relaticle as the immediate benchmark and Twenty as the large-platform refere
 - containerized multi-instance runtime
 - mandatory GitHub backups
 - MCP-first agent operation
+- generic records, relationships, timelines, tasks, and template-owned saved views
 
 Practical next step:
 
 1. Spin up Relaticle locally to inspect its MCP tool design.
 2. Inspect Twenty's object/workflow model and the community MCP server.
-3. Borrow patterns, but build Orkestr CRM as a focused TypeScript monorepo unless we decide stack requirements can change.
+3. Compare job-search and outreach presets against their object/view models.
+4. Borrow patterns, but build oXRM as a focused TypeScript monorepo unless we decide stack requirements can change.

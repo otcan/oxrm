@@ -85,6 +85,143 @@ export async function buildServer() {
     });
   });
 
+  app.get("/api/xrm/object-types", async (request) => {
+    const query = request.query as { active?: string; templateKey?: string; limit?: string };
+    return services.listXrmObjectTypes({
+      active: query.active === undefined ? undefined : query.active !== "false",
+      templateKey: query.templateKey,
+      limit: query.limit ? Number(query.limit) : undefined
+    });
+  });
+
+  app.post("/api/xrm/object-types", async (request, reply) => {
+    const created = await services.createXrmObjectType(request.body);
+    return reply.status(201).send(created);
+  });
+
+  app.get("/api/xrm/object-types/:slugOrId", async (request, reply) => {
+    const params = request.params as { slugOrId: string };
+    const objectType = await services.getXrmObjectType(params.slugOrId);
+    if (!objectType) {
+      return reply.status(404).send({ error: "xrm_object_type_not_found" });
+    }
+    return objectType;
+  });
+
+  app.get("/api/xrm/records", async (request) => {
+    const query = request.query as { objectType?: string; q?: string; includeDeleted?: string; limit?: string };
+    return services.searchXrmRecords({
+      objectType: query.objectType,
+      query: query.q,
+      includeDeleted: query.includeDeleted === "true",
+      limit: query.limit ? Number(query.limit) : undefined
+    });
+  });
+
+  app.post("/api/xrm/records", async (request, reply) => {
+    const record = await services.upsertXrmRecord(request.body);
+    return reply.status(201).send(record);
+  });
+
+  app.get("/api/xrm/records/:id", async (request, reply) => {
+    const params = request.params as { id: string };
+    const record = await services.getXrmRecord(params.id);
+    if (!record) {
+      return reply.status(404).send({ error: "xrm_record_not_found" });
+    }
+    return record;
+  });
+
+  app.delete("/api/xrm/records/:id", async (request, reply) => {
+    const params = request.params as { id: string };
+    const result = await services.deleteXrmRecord(params.id);
+    if (!result.deleted) {
+      return reply.status(404).send({ error: "xrm_record_not_found" });
+    }
+    return result;
+  });
+
+  app.get("/api/xrm/records/:id/events", async (request) => {
+    const params = request.params as { id: string };
+    const query = request.query as { limit?: string };
+    return services.listXrmRecordEvents({ recordId: params.id, limit: query.limit ? Number(query.limit) : undefined });
+  });
+
+  app.post("/api/xrm/relationship-types", async (request, reply) => {
+    const created = await services.createXrmRelationshipType(request.body);
+    return reply.status(201).send(created);
+  });
+
+  app.get("/api/xrm/relationships", async (request) => {
+    const query = request.query as { recordId?: string; relationshipType?: string; direction?: "source" | "target" | "both"; limit?: string };
+    return services.listXrmRelationships({
+      recordId: query.recordId,
+      relationshipType: query.relationshipType,
+      direction: query.direction,
+      limit: query.limit ? Number(query.limit) : undefined
+    });
+  });
+
+  app.post("/api/xrm/relationships", async (request, reply) => {
+    const relationship = await services.linkXrmRecords(request.body);
+    return reply.status(201).send(relationship);
+  });
+
+  app.get("/api/views", async (request) => {
+    const query = request.query as { objectType?: string; templateKey?: string; limit?: string };
+    return services.listViews({
+      objectType: query.objectType,
+      templateKey: query.templateKey,
+      limit: query.limit ? Number(query.limit) : undefined
+    });
+  });
+
+  app.post("/api/views", async (request, reply) => {
+    const view = await services.createView(request.body);
+    return reply.status(201).send(view);
+  });
+
+  app.get("/api/views/:idOrKey", async (request, reply) => {
+    const params = request.params as { idOrKey: string };
+    const view = await services.getView({ viewId: params.idOrKey, key: params.idOrKey });
+    if (!view) {
+      return reply.status(404).send({ error: "view_not_found" });
+    }
+    return view;
+  });
+
+  app.patch("/api/views/:idOrKey", async (request, reply) => {
+    const params = request.params as { idOrKey: string };
+    const view = await services.updateView({ viewId: params.idOrKey, key: params.idOrKey, patch: request.body });
+    if (!view) {
+      return reply.status(404).send({ error: "view_not_found" });
+    }
+    return view;
+  });
+
+  app.delete("/api/views/:idOrKey", async (request, reply) => {
+    const params = request.params as { idOrKey: string };
+    const result = await services.deleteView({ viewId: params.idOrKey, key: params.idOrKey });
+    if (!result.deleted) {
+      return reply.status(404).send({ error: "view_not_found" });
+    }
+    return result;
+  });
+
+  app.get("/api/views/:idOrKey/run", async (request) => {
+    const params = request.params as { idOrKey: string };
+    const query = request.query as { limit?: string };
+    return services.runView({
+      viewId: params.idOrKey,
+      key: params.idOrKey,
+      limit: query.limit ? Number(query.limit) : undefined
+    });
+  });
+
+  app.post("/api/views/run", async (request) => {
+    return services.runView(request.body);
+  });
+
   app.post("/api/leads", async (request, reply) => {
     const created = await services.createLead(request.body);
     return reply.status(201).send(created);
@@ -177,6 +314,10 @@ export async function buildServer() {
     return reply.status(result.idempotent ? 200 : 201).send(result);
   });
 
+  app.post("/api/outreach-events/backfill", async (request) => {
+    return services.backfillLegacyOutreachEvents(request.body);
+  });
+
   app.post("/api/activities", async (request, reply) => {
     const created = await services.logActivity(request.body);
     return reply.status(201).send(created);
@@ -188,6 +329,7 @@ export async function buildServer() {
       personId?: string;
       companyId?: string;
       taskId?: string;
+      xrmRecordId?: string;
       channel?: string;
       limit?: string;
     };
@@ -196,6 +338,7 @@ export async function buildServer() {
       personId: query.personId,
       companyId: query.companyId,
       taskId: query.taskId,
+      xrmRecordId: query.xrmRecordId,
       channel: query.channel,
       limit: query.limit ? Number(query.limit) : undefined
     });
@@ -207,6 +350,7 @@ export async function buildServer() {
       personId?: string;
       companyId?: string;
       taskId?: string;
+      xrmRecordId?: string;
       channel?: string;
       limit?: string;
     };
@@ -215,6 +359,7 @@ export async function buildServer() {
       personId: query.personId,
       companyId: query.companyId,
       taskId: query.taskId,
+      xrmRecordId: query.xrmRecordId,
       channel: query.channel,
       limit: query.limit ? Number(query.limit) : undefined
     });

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { OXRM_PRODUCT_NAME, OXRM_PRODUCT_SLUG, OXRM_PRODUCT_VERSION } from "@orkestr-crm/shared";
 
 interface CliContext {
   apiUrl: string;
@@ -42,8 +43,8 @@ function parseArgs(argv: string[]) {
 
 function getContext(flags: Map<string, string | boolean>): CliContext {
   return {
-    apiUrl: String(flags.get("api-url") ?? process.env.CRM_API_URL ?? "http://127.0.0.1:18181"),
-    mcpUrl: String(flags.get("mcp-url") ?? process.env.CRM_MCP_URL ?? "http://127.0.0.1:18182/mcp"),
+    apiUrl: String(flags.get("api-url") ?? process.env.OXRM_API_URL ?? process.env.CRM_API_URL ?? "http://127.0.0.1:18181"),
+    mcpUrl: String(flags.get("mcp-url") ?? process.env.OXRM_MCP_URL ?? process.env.CRM_MCP_URL ?? "http://127.0.0.1:18182/mcp"),
     json: flags.get("json") === true
   };
 }
@@ -79,7 +80,7 @@ async function requestApi(ctx: CliContext, path: string, init?: RequestInit) {
 }
 
 async function withMcpClient<T>(ctx: CliContext, cb: (client: Client) => Promise<T>) {
-  const client = new Client({ name: "orkestr-crm-cli", version: "0.1.0" });
+  const client = new Client({ name: "oxrm-cli", version: OXRM_PRODUCT_VERSION });
   const transport = new StreamableHTTPClientTransport(new URL(ctx.mcpUrl));
   await client.connect(transport as Parameters<typeof client.connect>[0]);
 
@@ -109,6 +110,7 @@ async function main() {
         {
           commands: [
             "health",
+            "version",
             "lead:create --name NAME [--email EMAIL] [--company COMPANY] [--domain DOMAIN] [--linkedin-url URL]",
             "lead:list [--query QUERY]",
             "person:list [--query QUERY]",
@@ -117,6 +119,7 @@ async function main() {
             "event:list [--lead-id ID] [--person-id ID] [--channel email]",
             "event:record --type email_received --channel email [--lead-id ID | --name NAME --email EMAIL] [--subject TEXT]",
             "outreach:record --name NAME --linkedin-url URL [--external-key KEY] [--flow-id ID]",
+            "outreach:backfill [--execute] [--lead-id ID] [--activity-id ID] [--limit 50]",
             "queue:due",
             "task:list [--status open]",
             "task:create --title TITLE [--lead-id ID] [--due-at ISO]",
@@ -137,8 +140,25 @@ async function main() {
 
     case "health":
       print({
+        product: {
+          name: OXRM_PRODUCT_NAME,
+          slug: OXRM_PRODUCT_SLUG,
+          version: OXRM_PRODUCT_VERSION
+        },
         api: await requestApi(ctx, "/api/health"),
         mcp: await fetch(ctx.mcpUrl.replace(/\/mcp$/, "/health")).then((res) => res.json())
+      });
+      break;
+
+    case "version":
+      print({
+        product: {
+          name: OXRM_PRODUCT_NAME,
+          slug: OXRM_PRODUCT_SLUG,
+          version: OXRM_PRODUCT_VERSION
+        },
+        apiUrl: ctx.apiUrl,
+        mcpUrl: ctx.mcpUrl
       });
       break;
 
@@ -310,9 +330,46 @@ async function main() {
               type: parsed.flags.get("type") || "connection_sent",
               channel: parsed.flags.get("channel") || "linkedin",
               direction: parsed.flags.get("direction") || "outbound",
+              subject: parsed.flags.get("subject") || undefined,
               body: parsed.flags.get("body") || "Recorded LinkedIn outreach event",
+              noteStatus: parsed.flags.get("note-status") || undefined,
+              proposedNote: parsed.flags.get("proposed-note") || undefined,
+              linkedinResult: parsed.flags.get("linkedin-result") || undefined,
+              sourceQuery: parsed.flags.get("source-query") || undefined,
+              searchPage: parsed.flags.get("search-page") ? Number(parsed.flags.get("search-page")) : undefined,
+              auditDirectory: parsed.flags.get("audit-directory") || undefined,
+              rowText: parsed.flags.get("row-text") || undefined,
+              profileUrl: parsed.flags.get("profile-url") || parsed.flags.get("linkedin-url") || undefined,
+              metadata: parseJsonFlag(parsed.flags, "metadata"),
               occurredAt: parsed.flags.get("occurred-at") || new Date().toISOString()
-            }
+            },
+            nextActionTask:
+              parsed.flags.get("no-next-task") === true
+                ? false
+                : {
+                    title: parsed.flags.get("task-title") || undefined,
+                    dueAt: parsed.flags.get("task-due-at") || undefined,
+                    dueInDays: parsed.flags.get("task-due-in-days") ? Number(parsed.flags.get("task-due-in-days")) : undefined,
+                    priority: parsed.flags.get("task-priority") ? Number(parsed.flags.get("task-priority")) : undefined,
+                    idempotencyKey: parsed.flags.get("task-key") || undefined
+                  }
+          })
+        })
+      );
+      break;
+
+    case "outreach:backfill":
+      print(
+        await requestApi(ctx, "/api/outreach-events/backfill", {
+          method: "POST",
+          body: JSON.stringify({
+            dryRun: parsed.flags.get("execute") !== true,
+            activityId: parsed.flags.get("activity-id") || undefined,
+            leadId: parsed.flags.get("lead-id") || undefined,
+            channel: parsed.flags.get("channel") || "linkedin",
+            limit: parsed.flags.get("limit") ? Number(parsed.flags.get("limit")) : 50,
+            createTasks: parsed.flags.get("no-create-tasks") !== true,
+            overwriteConfirmedBody: parsed.flags.get("overwrite-confirmed-body") === true
           })
         })
       );
@@ -488,8 +545,17 @@ async function main() {
             type: "connection_sent",
             channel: "linkedin",
             direction: "outbound",
-            body: "CLI smoke outreach event",
+            subject: "Connection request sent: CLI Smoke Outreach",
+            noteStatus: "unconfirmed",
+            proposedNote: "CLI smoke proposed note",
+            linkedinResult: "native_send_verified_pending",
+            sourceQuery: "cli smoke",
+            profileUrl: `https://example.invalid/linkedin/cli-smoke-${Date.now()}`,
             occurredAt: new Date().toISOString()
+          },
+          nextActionTask: {
+            dueInDays: 5,
+            metadata: { smoke: true }
           }
         };
         outreach = await requestApi(ctx, "/api/outreach-events", {
@@ -497,8 +563,15 @@ async function main() {
           body: JSON.stringify(outreachBody)
         });
         outreachLeadId = (outreach as { lead?: { id?: string } }).lead?.id;
+        if (!(outreach as { task?: { id?: string } }).task?.id) {
+          throw new Error("Outreach smoke did not create linked next-action task");
+        }
         if (outreachLeadId) {
           outreachDetail = await requestApi(ctx, `/api/leads/${outreachLeadId}`);
+          const linkedTasks = (outreachDetail as { tasks?: unknown[] }).tasks ?? [];
+          if (linkedTasks.length === 0) {
+            throw new Error("Outreach lead detail did not include linked task");
+          }
         }
         outreachDuplicate = await requestApi(ctx, "/api/outreach-events", {
           method: "POST",
@@ -538,6 +611,7 @@ async function main() {
         flowCount: flows.length,
         outreach,
         outreachDuplicate,
+        dedupedOutreach: (outreach as { activity?: { id?: string } }).activity?.id === (outreachDuplicate as { activity?: { id?: string } }).activity?.id,
         outreachDetail,
         backup,
         cleanup,

@@ -74,6 +74,37 @@ nav button:hover {
   color: #ffffff;
 }
 
+.view-nav {
+  display: grid;
+  gap: 4px;
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid #243044;
+}
+
+.view-nav > span,
+.view-nav small {
+  padding: 0 8px 6px;
+  color: #9ca3af;
+  font-size: 12px;
+}
+
+.view-nav button {
+  border: 0;
+  border-radius: 6px;
+  padding: 9px 12px;
+  text-align: left;
+  color: #d1d5db;
+  background: transparent;
+  cursor: pointer;
+}
+
+.view-nav button.active,
+.view-nav button:hover {
+  background: #164e63;
+  color: #ffffff;
+}
+
 .workspace {
   padding: 24px;
 }
@@ -193,6 +224,12 @@ h2 {
   margin-bottom: 12px;
 }
 
+.panel header p {
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 13px;
+}
+
 .panel button {
   border: 1px solid #cbd5e1;
   background: #f8fafc;
@@ -217,6 +254,40 @@ h2 {
   border: 1px solid #e5e7eb;
   border-radius: 6px;
   background: #fbfdff;
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+.view-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 14px;
+}
+
+.view-table th,
+.view-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid #e5e7eb;
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.view-table th {
+  color: #475569;
+  background: #f8fafc;
+  font-weight: 700;
+}
+
+.view-table td {
+  color: #1f2937;
+}
+
+.queue-row > div {
+  min-width: 0;
 }
 
 .action-row {
@@ -244,6 +315,7 @@ h2 {
   margin-top: 6px;
   color: #475569;
   line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 
 .queue-row time {
@@ -436,6 +508,14 @@ textarea {
   display: block;
   margin-top: 3px;
   color: #667085;
+}
+
+.mini-row small {
+  display: block;
+  margin-top: 6px;
+  color: #475569;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 
 .detail-state {

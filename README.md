@@ -1,13 +1,17 @@
-# Orkestr CRM
+# oXRM
 
-Orkestr CRM is an MCP-first outreach ledger for agent-operated sales workflows. It gives AI agents and connector workers one auditable place to record leads, outreach events, follow-up state, scheduling context, and backup status.
+oXRM is the product shorthand for Orkestr XRM. The repository still has internal package scopes that use the older Orkestr CRM name, but operator-facing commands and docs now use `oxrm`.
 
-The project is deliberately not a generic CRM or an outreach automation bot. The core product contract is the ledger: every successful external send can be written once, deduplicated by an idempotency key, and then read back through HTTP APIs, MCP tools, and MCP resources.
+Today, oXRM is an MCP-first relationship system with a shipped outreach preset and a job-search proof preset. It gives AI agents, connector workers, and operators one auditable place to record generic records, relationships, timelines, tasks, saved views, follow-up state, scheduling context, and backup status.
+
+The project is deliberately not an outreach automation bot. The core product contract is the relationship ledger: important external or operator actions can be written once, deduplicated by an idempotency key where applicable, linked to generic records, and then read back through HTTP APIs, MCP tools, MCP resources, and saved views.
 
 ## What It Does
 
 - Records outreach events atomically: lead upsert, flow assignment update, and activity append.
-- Exposes MCP tools and resources for agent workflows such as queue review, lead lookup, event recording, and backup health.
+- Stores generic oXRM object types, records, typed relationships, linked tasks, timelines, and saved table views.
+- Ships outreach and job-search template seeds with public-safe synthetic records.
+- Exposes MCP tools and resources for agent workflows such as queue review, record lookup, view execution, event recording, and backup health.
 - Keeps connector boundaries explicit for LinkedIn, Sales Navigator, email, calendar, and future CRM syncs.
 - Ships a public-safe synthetic demo seed and smoke path.
 - Treats backups, approval boundaries, and auditability as product requirements.
@@ -30,51 +34,56 @@ Run the product through Docker. You do not need Node.js or pnpm on the host for 
 Requirements:
 
 - Docker Engine
-- Docker Compose plugin, optional. If Compose is unavailable, `./ocrm` falls back to direct Docker containers.
+- Docker Compose plugin, optional. If Compose is unavailable, `./oxrm` falls back to direct Docker containers.
 
 ```bash
-./ocrm start
-./ocrm ready
-./ocrm demo
-./ocrm test
+./oxrm start
+./oxrm ready
+./oxrm demo
+./oxrm test
+./oxrm upgrade
 ```
 
-`./ocrm` builds the app image, starts Postgres, Redis, API, MCP, web, worker, and scheduler containers, runs migrations, seeds baseline data, loads a public-safe demo, then runs smoke checks.
+`./oxrm` builds the app image, starts Postgres, Redis, API, MCP, web, worker, and scheduler containers, runs migrations, seeds baseline data, loads a public-safe demo, then runs smoke checks.
+
+`./ocrm` is a deprecated compatibility wrapper around `./oxrm`. New automation should call `./oxrm`.
+
+Use `./oxrm -i <instance> upgrade` for repeatable instance updates. It backs up, verifies the backup, stops app writers, builds the image, runs migrations once, runs idempotent seed, restarts services, and smoke-tests the instance. For disposable local instances without backup credentials, pass `--skip-backup`; do not skip backups for production-bound instances.
 
 Print the URLs assigned to the Docker instance:
 
 ```bash
-./ocrm urls
+./oxrm urls
 ```
 
 Run CLI commands inside the Docker instance network:
 
 ```bash
-./ocrm cli health
-./ocrm tools
-./ocrm cli mcp:call crm.search_leads --input '{"query":"founder"}'
-./ocrm cli mcp:read crm://queue/today
+./oxrm cli health
+./oxrm tools
+./oxrm cli mcp:call crm.search_leads --input '{"query":"founder"}'
+./oxrm cli mcp:read crm://queue/today
 ```
 
-The default demo instance exposes services through Docker-managed host ports. Use `./ocrm urls` instead of hard-coding ports in scripts or documentation. Override host ports in `instances/<name>.env.example` before creating an instance, or in the private `instances/<name>.local.env` after setup.
+The default demo instance exposes services through Docker-managed host ports. Use `./oxrm urls` instead of hard-coding ports in scripts or documentation. Override host ports in `instances/<name>.env.example` before creating an instance, or in the private `instances/<name>.local.env` after setup.
 
 ## Multiple Docker Instances
 
 Multiple instances are isolated by env file, Docker project name, host ports, and database volumes.
 
 ```bash
-./ocrm new client-a
+./oxrm new client-a
 $EDITOR instances/client-a.local.env
-./ocrm -i client-a start
-./ocrm -i client-a ready
-./ocrm -i client-a urls
+./oxrm -i client-a start
+./oxrm -i client-a ready
+./oxrm -i client-a urls
 ```
 
 Each instance runs its CLI inside that instance's Docker network:
 
 ```bash
-./ocrm -i client-a cli health
-./ocrm -i client-a cli event:list --limit 20
+./oxrm -i client-a cli health
+./oxrm -i client-a cli event:list --limit 20
 ```
 
 ## Public-Safe Demo
@@ -82,31 +91,36 @@ Each instance runs its CLI inside that instance's Docker network:
 The demo path uses only synthetic records and `.invalid` URLs.
 
 ```bash
-./ocrm start
-./ocrm ready
-./ocrm demo
-./ocrm test
+./oxrm start
+./oxrm ready
+./oxrm demo
+./oxrm test
 ```
 
-Use `./ocrm urls` to print the Docker instance URLs. Keep `instances/*.local.env` private; they may contain credentials and backup targets.
+Use `./oxrm urls` to print the Docker instance URLs. Keep `instances/*.local.env` private; they may contain credentials and backup targets.
+
+`./oxrm ready` seeds both bundled templates:
+
+- `outreach`: people, companies, leads, tasks, events, and outreach saved views.
+- `job_search`: companies, contacts, jobs, applications, interviews, referrals, documents, saved views, synthetic records, an application timeline event, and a follow-up task.
 
 ## CLI And MCP Testing
 
 Use the Dockerized CLI:
 
 ```bash
-./ocrm cli health
-./ocrm tools
-./ocrm cli mcp:call crm.search_leads --input '{"query":"founder"}'
-./ocrm cli mcp:read crm://queue/today
-./ocrm smoke
+./oxrm cli health
+./oxrm tools
+./oxrm cli mcp:call crm.search_leads --input '{"query":"founder"}'
+./oxrm cli mcp:read crm://queue/today
+./oxrm smoke
 ```
 
-Host-side CLI development is contributor-only. For normal use, run `./ocrm cli ...` so the CLI resolves API and MCP services inside the Docker network.
+Host-side CLI development is contributor-only. For normal use, run `./oxrm cli ...` so the CLI resolves API and MCP services inside the Docker network.
 
 ## Data Model
 
-Orkestr CRM keeps identity separate from workflow state:
+oXRM keeps identity separate from workflow state:
 
 - People are contacts.
 - Companies own names, websites, and domains.
@@ -117,10 +131,14 @@ Orkestr CRM keeps identity separate from workflow state:
 
 Lead writes go through identity resolution. Email addresses, LinkedIn URLs, SalesNav URLs, domains, and normalized company names are used to find existing records before anything new is created. Common fields are first-class columns, and `customFields`/`metadata` keep the model expandable.
 
-General connector ingestion should write idempotent timeline events to `POST /api/events`:
+The oXRM pivot keeps this outreach model working while adding generic records, typed relationships, timelines, tasks, saved views, and MCP tools that can support other relationship domains. Generic records should use a hybrid persistence model: PostgreSQL remains the transactional source of truth, append-friendly record/event files support fast writes and audit/export, and indexed projections support fast search at up to 1M records per instance.
+
+Generic saved views are template-aware. Agents can list and run them through `xrm.list_views` and `xrm.run_view`; the web UI renders configured table views for seeded object types. Existing `crm.*` view tools remain available for compatibility.
+
+General non-outreach connector ingestion can write idempotent timeline events to `POST /api/events`:
 
 ```bash
-./ocrm cli -- event:record \
+./oxrm cli -- event:record \
   --type email_received \
   --channel email \
   --direction inbound \
@@ -134,10 +152,10 @@ The event ledger accepts `message_sent`, `message_received`, `connection_request
 
 ## Outreach Event Contract
 
-Successful outreach senders should write to the ledger with one atomic API call:
+Successful outreach senders should use the canonical outreach write path, which records lead, assignment, activity, structured metadata, idempotency, and linked next-action task behavior in one transaction:
 
 ```bash
-curl -X POST "$CRM_API_URL/api/outreach-events" \
+curl -X POST "$OXRM_API_URL/api/outreach-events" \
   -H 'content-type: application/json' \
   -d '{
     "externalKey": "demo:connection:alex-rivera:2026-06-15T09:23:18Z",
@@ -156,8 +174,14 @@ curl -X POST "$CRM_API_URL/api/outreach-events" \
       "type": "connection_sent",
       "channel": "linkedin",
       "direction": "outbound",
-      "body": "Synthetic connection request recorded for demo purposes.",
+      "subject": "Connection request sent: Alex Rivera",
+      "noteStatus": "unconfirmed",
+      "proposedNote": "Synthetic proposed connection note.",
+      "linkedinResult": "native_send_verified_pending",
       "occurredAt": "2026-06-15T09:23:18Z"
+    },
+    "nextActionTask": {
+      "dueInDays": 5
     }
   }'
 ```
@@ -167,17 +191,19 @@ curl -X POST "$CRM_API_URL/api/outreach-events" \
 ## Database
 
 ```bash
-./ocrm migrate
-./ocrm seed
-./ocrm demo
-./ocrm db-smoke
+./oxrm migrate
+./oxrm seed
+./oxrm demo
+./oxrm db-smoke
 ```
 
 `seed` creates baseline product configuration. `demo-seed` adds public-safe synthetic demo records.
 
+During the current migration stage, every schema migration must include an explicit manual update note for required data movement, backfill, verification, and rollback impact. Do not rely on old compatibility paths silently carrying data forward.
+
 ## Contributor Development
 
-Normal users should use `./ocrm`. Contributors who are changing TypeScript code can run workspace commands directly on the host:
+Normal users should use `./oxrm`. Contributors who are changing TypeScript code can run workspace commands directly on the host:
 
 ```bash
 corepack enable
@@ -187,11 +213,12 @@ pnpm build
 pnpm db:generate
 ```
 
-For host-side dev services, use `scripts/crm dev <service>`. Runtime validation should still go through Docker with `./ocrm test`.
+For host-side dev services, use `scripts/crm dev <service>`. Runtime validation should still go through Docker with `./oxrm test`.
 
 ## Documentation
 
 - [Architecture](docs/architecture.md)
+- [Backlog decisions](docs/backlog-decisions.md)
 - [Outreach event contract](docs/outreach-event-contract.md)
 - [Privacy and safe-data handling](docs/privacy-and-safe-data.md)
 - [Future CRM sync](docs/crm-sync.md)
@@ -204,8 +231,8 @@ For host-side dev services, use `scripts/crm dev <service>`. Runtime validation 
 Production must configure `BACKUP_GITHUB_REPO` and `BACKUP_GITHUB_TOKEN`.
 
 ```bash
-./ocrm backup
-./ocrm verify
+./oxrm backup
+./oxrm verify
 ```
 
 The backup worker is part of the scaffold because backup enforcement is a product requirement, not an operational afterthought.

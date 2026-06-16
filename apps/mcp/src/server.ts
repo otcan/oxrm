@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { OXRM_PRODUCT_NAME, OXRM_PRODUCT_SLUG, OXRM_PRODUCT_VERSION } from "@orkestr-crm/shared";
 import Fastify from "fastify";
 import { z } from "zod";
 import { loadConfig } from "./config.js";
@@ -38,6 +39,39 @@ function stripConnectorFields(value: unknown): unknown {
   return value;
 }
 
+const xrmSlugSchema = z
+  .string()
+  .min(2)
+  .max(96)
+  .regex(/^[a-z][a-z0-9_.-]*$/);
+const viewFieldSchema = z
+  .string()
+  .min(1)
+  .max(128)
+  .regex(/^[a-zA-Z0-9_.-]+$/);
+const viewFilterSchema = z.object({
+  field: viewFieldSchema,
+  operator: z.enum(["equals", "contains", "starts_with", "is_empty", "is_not_empty", "before", "after"]).default("contains"),
+  value: z.unknown().optional()
+});
+const viewSortSchema = z.object({
+  field: viewFieldSchema,
+  direction: z.enum(["asc", "desc"]).default("asc")
+});
+const createViewSchema = {
+  key: z.string().min(2).max(96).regex(/^[a-z][a-z0-9_.-]*$/),
+  name: z.string().min(1),
+  description: z.string().optional(),
+  objectType: xrmSlugSchema,
+  templateKey: xrmSlugSchema.optional(),
+  layout: z.enum(["table", "cards", "timeline"]).default("table"),
+  columns: z.array(viewFieldSchema).default([]),
+  filters: z.array(viewFilterSchema).default([]),
+  sort: z.array(viewSortSchema).default([]),
+  isDefault: z.boolean().default(false),
+  createdByAgentId: z.string().uuid().optional()
+};
+
 export async function buildMcpHttpServer() {
   const config = loadConfig();
   const tools = createCrmTools(config.databaseUrl);
@@ -49,13 +83,18 @@ export async function buildMcpHttpServer() {
 
   app.get("/health", async () => ({
     status: "ok",
-    service: "orkestr-crm-mcp"
+    service: "oxrm-mcp",
+    product: {
+      name: OXRM_PRODUCT_NAME,
+      slug: OXRM_PRODUCT_SLUG,
+      version: OXRM_PRODUCT_VERSION
+    }
   }));
 
   app.all("/mcp", async (request, reply) => {
     const server = new McpServer({
-      name: "orkestr-crm",
-      version: "0.1.0"
+      name: "oxrm",
+      version: OXRM_PRODUCT_VERSION
     });
 
     server.resource("crm.queue.today", "crm://queue/today", async (uri) => ({
@@ -80,6 +119,22 @@ export async function buildMcpHttpServer() {
             {
               uri: uri.href,
               text: JSON.stringify(leadId ? await tools.services.getLead(leadId) : null, null, 2)
+            }
+          ]
+        };
+      }
+    );
+
+    server.resource(
+      "xrm.record",
+      new ResourceTemplate("xrm://records/{recordId}", { list: undefined }),
+      async (uri, params) => {
+        const recordId = Array.isArray(params.recordId) ? params.recordId[0] : params.recordId;
+        return {
+          contents: [
+            {
+              uri: uri.href,
+              text: JSON.stringify(recordId ? await tools.services.getXrmRecord(recordId) : null, null, 2)
             }
           ]
         };
@@ -152,9 +207,10 @@ export async function buildMcpHttpServer() {
 
     server.tool(
       "crm.list_views",
-      "List saved CRM views. Saved views are the MCP-first bridge toward dynamic xRM views.",
+      "List saved views over generic oXRM object types. Legacy CRM views remain compatible.",
       {
-        objectType: z.enum(["lead", "person", "company", "task", "event"]).optional(),
+        objectType: xrmSlugSchema.optional(),
+        templateKey: xrmSlugSchema.optional(),
         limit: z.number().int().min(1).max(100).optional()
       },
       async (input) => toContent(await tools.services.listViews(input))
@@ -172,34 +228,8 @@ export async function buildMcpHttpServer() {
 
     server.tool(
       "crm.create_view",
-      "Create a saved view over an existing CRM object type.",
-      {
-        key: z.string().min(2).max(96).regex(/^[a-z][a-z0-9_.-]*$/),
-        name: z.string().min(1),
-        description: z.string().optional(),
-        objectType: z.enum(["lead", "person", "company", "task", "event"]),
-        layout: z.enum(["table", "cards", "timeline"]).default("table"),
-        columns: z.array(z.string().min(1)).default([]),
-        filters: z
-          .array(
-            z.object({
-              field: z.string().min(1),
-              operator: z.enum(["equals", "contains", "starts_with", "is_empty", "is_not_empty", "before", "after"]).default("contains"),
-              value: z.unknown().optional()
-            })
-          )
-          .default([]),
-        sort: z
-          .array(
-            z.object({
-              field: z.string().min(1),
-              direction: z.enum(["asc", "desc"]).default("asc")
-            })
-          )
-          .default([]),
-        isDefault: z.boolean().default(false),
-        createdByAgentId: z.string().uuid().optional()
-      },
+      "Create a saved view over a generic oXRM object type.",
+      createViewSchema,
       async (input) => toContent(await tools.services.createView(input))
     );
 
@@ -212,26 +242,12 @@ export async function buildMcpHttpServer() {
         patch: z.object({
           name: z.string().min(1).optional(),
           description: z.string().optional(),
-          objectType: z.enum(["lead", "person", "company", "task", "event"]).optional(),
+          objectType: xrmSlugSchema.optional(),
+          templateKey: xrmSlugSchema.optional(),
           layout: z.enum(["table", "cards", "timeline"]).optional(),
-          columns: z.array(z.string().min(1)).optional(),
-          filters: z
-            .array(
-              z.object({
-                field: z.string().min(1),
-                operator: z.enum(["equals", "contains", "starts_with", "is_empty", "is_not_empty", "before", "after"]).default("contains"),
-                value: z.unknown().optional()
-              })
-            )
-            .optional(),
-          sort: z
-            .array(
-              z.object({
-                field: z.string().min(1),
-                direction: z.enum(["asc", "desc"]).default("asc")
-              })
-            )
-            .optional(),
+          columns: z.array(viewFieldSchema).optional(),
+          filters: z.array(viewFilterSchema).optional(),
+          sort: z.array(viewSortSchema).optional(),
           isDefault: z.boolean().optional()
         })
       },
@@ -241,6 +257,170 @@ export async function buildMcpHttpServer() {
     server.tool(
       "crm.run_view",
       "Execute a saved view and return matching rows.",
+      {
+        viewId: z.string().optional(),
+        key: z.string().optional(),
+        limit: z.number().int().min(1).max(500).optional()
+      },
+      async (input) => toContent(await tools.services.runView(input))
+    );
+
+    server.tool(
+      "xrm.list_object_types",
+      "List generic oXRM object types and their field definitions.",
+      {
+        active: z.boolean().optional(),
+        templateKey: z.string().optional(),
+        limit: z.number().int().min(1).max(100).optional()
+      },
+      async (input) => toContent(await tools.services.listXrmObjectTypes(input))
+    );
+
+    server.tool(
+      "xrm.create_object_type",
+      "Create or update a generic oXRM object type from configuration.",
+      {
+        slug: z.string().min(2).max(96).regex(/^[a-z][a-z0-9_.-]*$/),
+        label: z.string().min(1),
+        pluralLabel: z.string().min(1).optional(),
+        icon: z.string().optional(),
+        displayField: z.string().min(1).default("name"),
+        description: z.string().optional(),
+        templateKey: z.string().optional(),
+        system: z.boolean().default(false),
+        active: z.boolean().default(true),
+        metadata: z.record(z.string(), z.unknown()).optional(),
+        fields: z
+          .array(
+            z.object({
+              key: z.string().min(2).max(96).regex(/^[a-z][a-z0-9_.-]*$/),
+              label: z.string().min(1),
+              dataType: z.enum(["text", "number", "boolean", "date", "datetime", "url", "email", "json", "select"]).default("text"),
+              required: z.boolean().default(false),
+              indexed: z.boolean().default(false),
+              config: z.record(z.string(), z.unknown()).optional()
+            })
+          )
+          .default([])
+      },
+      async (input) => toContent(await tools.services.createXrmObjectType(input))
+    );
+
+    server.tool(
+      "xrm.search_records",
+      "Search generic oXRM records by object type, display name, external key, or indexed text.",
+      {
+        objectType: z.string().min(2).max(96).regex(/^[a-z][a-z0-9_.-]*$/).optional(),
+        query: z.string().optional(),
+        includeDeleted: z.boolean().default(false),
+        limit: z.number().int().min(1).max(500).default(100)
+      },
+      async (input) => toContent(await tools.services.searchXrmRecords(input))
+    );
+
+    server.tool(
+      "xrm.get_record",
+      "Read one generic oXRM record with object type, relationships, tasks, and timeline.",
+      {
+        recordId: z.string().uuid()
+      },
+      async (input) => toContent(await tools.services.getXrmRecord(input.recordId))
+    );
+
+    server.tool(
+      "xrm.upsert_record",
+      "Create or update a generic oXRM record by ID or external key.",
+      {
+        objectType: z.string().min(2).max(96).regex(/^[a-z][a-z0-9_.-]*$/),
+        recordId: z.string().uuid().optional(),
+        externalKey: z.string().optional(),
+        displayName: z.string().optional(),
+        fields: z.record(z.string(), z.unknown()).default({}),
+        status: z.string().default("active"),
+        source: z.string().optional(),
+        ownerAgentId: z.string().uuid().optional(),
+        legacyEntityType: z.string().optional(),
+        legacyEntityId: z.string().uuid().optional(),
+        metadata: z.record(z.string(), z.unknown()).optional()
+      },
+      async (input) => toContent(await tools.services.upsertXrmRecord(input))
+    );
+
+    server.tool(
+      "xrm.create_relationship_type",
+      "Create or update a typed oXRM relationship definition.",
+      {
+        key: z.string().min(2).max(96).regex(/^[a-z][a-z0-9_.-]*$/),
+        label: z.string().min(1),
+        inverseLabel: z.string().optional(),
+        sourceObjectType: z.string().min(2).max(96).regex(/^[a-z][a-z0-9_.-]*$/).optional(),
+        targetObjectType: z.string().min(2).max(96).regex(/^[a-z][a-z0-9_.-]*$/).optional(),
+        cardinality: z.enum(["one_to_one", "one_to_many", "many_to_one", "many_to_many"]).default("many_to_many"),
+        metadataSchema: z.record(z.string(), z.unknown()).optional(),
+        system: z.boolean().default(false),
+        active: z.boolean().default(true)
+      },
+      async (input) => toContent(await tools.services.createXrmRelationshipType(input))
+    );
+
+    server.tool(
+      "xrm.link_records",
+      "Create or update a typed relationship between two generic oXRM records.",
+      {
+        relationshipType: z.string().min(2).max(96).regex(/^[a-z][a-z0-9_.-]*$/),
+        sourceRecordId: z.string().uuid(),
+        targetRecordId: z.string().uuid(),
+        metadata: z.record(z.string(), z.unknown()).optional(),
+        source: z.string().optional(),
+        createdByAgentId: z.string().uuid().optional()
+      },
+      async (input) => toContent(await tools.services.linkXrmRecords(input))
+    );
+
+    server.tool(
+      "xrm.list_relationships",
+      "List generic oXRM relationships for a record or relationship type.",
+      {
+        recordId: z.string().uuid().optional(),
+        relationshipType: z.string().min(2).max(96).regex(/^[a-z][a-z0-9_.-]*$/).optional(),
+        direction: z.enum(["source", "target", "both"]).default("both"),
+        includeDeleted: z.boolean().default(false),
+        limit: z.number().int().min(1).max(500).default(100)
+      },
+      async (input) => toContent(await tools.services.listXrmRelationships(input))
+    );
+
+    server.tool(
+      "xrm.list_record_events",
+      "List timeline events linked directly to one generic oXRM record.",
+      {
+        recordId: z.string().uuid(),
+        limit: z.number().int().min(1).max(100).optional()
+      },
+      async (input) => toContent(await tools.services.listXrmRecordEvents(input))
+    );
+
+    server.tool(
+      "xrm.list_views",
+      "List saved views for generic oXRM object types and optional template keys.",
+      {
+        objectType: xrmSlugSchema.optional(),
+        templateKey: xrmSlugSchema.optional(),
+        limit: z.number().int().min(1).max(100).optional()
+      },
+      async (input) => toContent(await tools.services.listViews(input))
+    );
+
+    server.tool(
+      "xrm.create_view",
+      "Create a saved table/cards/timeline view for a generic oXRM object type.",
+      createViewSchema,
+      async (input) => toContent(await tools.services.createView(input))
+    );
+
+    server.tool(
+      "xrm.run_view",
+      "Run a saved generic oXRM view and return matching rows.",
       {
         viewId: z.string().optional(),
         key: z.string().optional(),
@@ -598,11 +778,52 @@ export async function buildMcpHttpServer() {
             externalUrl: z.string().url().optional(),
             idempotencyKey: z.string().optional(),
             metadata: z.record(z.string(), z.unknown()).optional(),
+            noteStatus: z.enum(["confirmed_sent", "no_note", "unconfirmed"]).optional(),
+            proposedNote: z.string().optional(),
+            linkedinResult: z.string().optional(),
+            sourceQuery: z.string().optional(),
+            searchPage: z.number().int().optional(),
+            auditDirectory: z.string().optional(),
+            rowText: z.string().optional(),
+            profileUrl: z.string().url().optional(),
             occurredAt: z.string().datetime().optional()
           })
+          .optional(),
+        nextActionTask: z
+          .union([
+            z.object({
+              create: z.boolean().default(true),
+              title: z.string().min(1).optional(),
+              description: z.string().optional(),
+              type: z.enum(["outreach", "follow_up", "research", "data_cleanup", "approval", "manual"]).default("follow_up"),
+              status: z.enum(["open", "in_progress", "blocked", "done", "canceled"]).default("open"),
+              priority: z.number().int().optional(),
+              dueAt: z.string().datetime().optional(),
+              dueInDays: z.number().int().min(0).max(365).optional(),
+              ownerAgentId: z.string().uuid().optional(),
+              idempotencyKey: z.string().optional(),
+              metadata: z.record(z.string(), z.unknown()).optional()
+            }),
+            z.literal(false)
+          ])
           .optional()
       },
       async (input) => toContent(await tools.services.recordOutreachEvent(input))
+    );
+
+    server.tool(
+      "crm.backfill_legacy_outreach_events",
+      "Dry-run or execute normalization for legacy outreach activities with unstructured body text.",
+      {
+        dryRun: z.boolean().default(true),
+        activityId: z.string().uuid().optional(),
+        leadId: z.string().uuid().optional(),
+        channel: z.enum(["linkedin", "salesnav", "email", "scheduler", "manual"]).default("linkedin"),
+        limit: z.number().int().min(1).max(500).default(50),
+        createTasks: z.boolean().default(true),
+        overwriteConfirmedBody: z.boolean().default(false)
+      },
+      async (input) => toContent(await tools.services.backfillLegacyOutreachEvents(input))
     );
 
     server.tool(

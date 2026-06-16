@@ -1,5 +1,5 @@
 import { Injectable } from "@angular/core";
-import { EventRow, HealthResponse, LeadEditForm, LeadRow, TaskEditForm, TaskRow } from "./models";
+import { EventRow, HealthResponse, LeadEditForm, LeadRow, TaskEditForm, TaskRow, ViewDefinition, ViewRunResult } from "./models";
 
 @Injectable({ providedIn: "root" })
 export class CrmApiService {
@@ -54,6 +54,18 @@ export class CrmApiService {
 
   async listEvents() {
     return this.request<EventRow[]>("/api/events?limit=50");
+  }
+
+  async listViews(templateKey?: string) {
+    const query = new URLSearchParams({ limit: "100" });
+    if (templateKey) {
+      query.set("templateKey", templateKey);
+    }
+    return this.request<ViewDefinition[]>(`/api/views?${query.toString()}`);
+  }
+
+  async runView(key: string, limit = 100) {
+    return this.request<ViewRunResult>(`/api/views/${encodeURIComponent(key)}/run?limit=${limit}`);
   }
 
   private async request<T>(path: string, init: RequestInit = {}) {

@@ -73,6 +73,7 @@ services:
     environment:
       NODE_ENV: development
       WEB_PORT: 18180
+      OXRM_API_PROXY_TARGET: http://api:18181
       CRM_API_PROXY_TARGET: http://api:18181
     ports:
       - "127.0.0.1:${HOST_WEB_PORT:-18180}:18180"

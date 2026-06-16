@@ -1,6 +1,6 @@
 # Privacy And Safe-Data Handling
 
-Orkestr CRM stores outreach and CRM state. Treat all production data as sensitive, even when a single field looks public.
+oXRM stores relationship, outreach, task, and timeline state. Treat all production data as sensitive, even when a single field looks public.
 
 ## Data Classes
 

@@ -1,10 +1,10 @@
 # Future CRM Sync
 
-Orkestr CRM should remain the outreach ledger even when a team also uses a larger CRM. External CRM systems are downstream or upstream integration targets, not replacements for the event contract.
+oXRM should remain the outreach ledger for the bundled outreach preset even when a team also uses a larger CRM. External CRM systems are downstream or upstream integration targets, not replacements for the event contract.
 
 ## Direction
 
-- Inbound sync imports account, contact, lead, owner, and status context into Orkestr CRM.
+- Inbound sync imports account, contact, lead, owner, and status context into oXRM.
 - Outbound sync exports deduplicated outreach activities, assignment status, meeting outcomes, and consent states.
 - Bidirectional sync is allowed only when conflict rules are explicit and testable.
 
@@ -32,7 +32,7 @@ Do not silently merge leads on name alone.
 
 ## Conflict Rules
 
-- Orkestr CRM owns outreach events created through `POST /api/outreach-events` and `crm.record_outreach_event`.
+- oXRM owns outreach events created through `POST /api/outreach-events` and `crm.record_outreach_event`.
 - External CRMs may own pipeline stage, account ownership, and billing/customer lifecycle fields.
 - Connector workers should append activities instead of rewriting history.
 - Destructive changes require an explicit approval flow.

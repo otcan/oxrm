@@ -63,8 +63,11 @@ import { EventRow, LeadEditForm, LeadRow } from "./models";
         <div class="mini-list">
           @for (event of activities; track event.id) {
             <div class="mini-row">
-              <strong>{{ event.subject || event.type }}</strong>
-              <span>{{ event.channel }} · {{ event.direction }} · {{ event.occurredAt | date:'short' }}</span>
+              <strong>{{ eventTitle(event) }}</strong>
+              <span>{{ eventSummary(event) }} · {{ event.occurredAt | date:'short' }}</span>
+              @if (eventSnippet(event)) {
+                <small>{{ eventSnippet(event) }}</small>
+              }
             </div>
           } @empty {
             <p>No related events.</p>
@@ -104,6 +107,36 @@ export class LeadDetailComponent implements OnChanges {
 
   save() {
     this.saveLead.emit(this.form);
+  }
+
+  eventTitle(event: EventRow) {
+    if (event.subject) {
+      return event.subject;
+    }
+    if (event.type === "connection_sent" || event.type === "connection_request_sent") {
+      return `Connection request sent: ${this.lead.fullName}`;
+    }
+    return event.type.replaceAll("_", " ");
+  }
+
+  eventSummary(event: EventRow) {
+    const metadata = event.metadata ?? {};
+    return [
+      event.channel,
+      event.direction,
+      metadata.noteStatus ? `note ${String(metadata.noteStatus).replaceAll("_", " ")}` : undefined,
+      metadata.sourceQuery ? `query ${metadata.sourceQuery}` : undefined,
+      metadata.linkedinResult ? `result ${metadata.linkedinResult}` : undefined
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  }
+
+  eventSnippet(event: EventRow) {
+    const metadata = event.metadata ?? {};
+    const text = event.body || metadata.proposedNote || metadata.rowText || "";
+    const compacted = String(text).trim().replace(/\s+/g, " ");
+    return compacted.length > 140 ? `${compacted.slice(0, 139)}...` : compacted;
   }
 }
 

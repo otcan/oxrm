@@ -2,7 +2,11 @@
 
 Instances are isolated with Docker project names, per-instance env files, separate host ports, and separate database volumes.
 
-Use `./ocrm` rather than hand-writing Docker or `pnpm` commands. It does not require Node.js or pnpm on the host; CLI commands run inside the selected instance network.
+Use `./oxrm` rather than hand-writing Docker or `pnpm` commands. It does not require Node.js or pnpm on the host; CLI commands run inside the selected instance network.
+
+`./ocrm` still works as a deprecated compatibility wrapper, but new scripts and docs should use `./oxrm`.
+
+Instance isolation stays at the Docker/runtime layer. The repository should not grow a product-level instance-management model while per-instance env files, project names, ports, and volumes are sufficient.
 
 ## Demo Instance
 
@@ -15,31 +19,62 @@ instances/demo.env.example
 Create the private runtime env:
 
 ```bash
-./ocrm setup
+./oxrm setup
 $EDITOR instances/demo.local.env
 ```
 
 Print the URLs assigned to the Docker instance:
 
 ```bash
-./ocrm urls
+./oxrm urls
 ```
 
 Common Docker instance commands:
 
 ```bash
-./ocrm start
-./ocrm ready
-./ocrm demo
-./ocrm test
-./ocrm tools
-./ocrm backup
+./oxrm start
+./oxrm ready
+./oxrm demo
+./oxrm test
+./oxrm tools
+./oxrm backup
+./oxrm upgrade
 ```
 
-To add another instance, run `./ocrm new <name>`, choose unique host ports, then use `./ocrm -i <name> start`.
+To add another local instance, run `./oxrm new <name>`, choose unique host ports, then use `./oxrm -i <name> start`. Treat tracked example files as public-safe scaffolding only; live `.local.env` files remain private and ignored.
 
 Keep per-instance `.local.env` files private. They may contain database passwords, backup repository names, and GitHub tokens.
 
 `seed` creates baseline product configuration. `demo-seed` adds synthetic demo leads, assignments, and activities that are safe to use in screenshots, smoke tests, and public walkthroughs.
 
-Lead and event writes normalize people, companies, domains, and email addresses before inserting records. Use `./ocrm cli -- event:record ...` for idempotent message/email/connection-request timeline writes, and `./ocrm tools` to inspect the MCP task, identity, and event tools exposed to agents.
+Lead and event writes normalize people, companies, domains, and email addresses before inserting records. Use `./oxrm cli -- event:record ...` for idempotent message/email/connection-request timeline writes, and `./oxrm tools` to inspect the MCP task, identity, and event tools exposed to agents.
+
+## Instance Upgrades
+
+Use the upgrade command per Docker-isolated instance:
+
+```bash
+./oxrm -i demo upgrade
+./oxrm -i mete-linkedin upgrade
+./oxrm -i firat-linkedin upgrade
+```
+
+The default flow is:
+
+1. Ensure Postgres and Redis are running.
+2. Run a backup.
+3. Verify the latest backup artifact.
+4. Stop app and worker services while keeping data services up.
+5. Build the app image from the current checkout.
+6. Run migrations once.
+7. Run idempotent baseline seed.
+8. Restart API, MCP, web, worker, scheduler, and backup services.
+9. Run health and smoke checks.
+
+For disposable local instances without backup credentials, use:
+
+```bash
+./oxrm -i demo upgrade --skip-backup
+```
+
+Do not use `--skip-backup` for production-bound instances. Other local-only flags are `--skip-smoke`, `--skip-seed`, and `--skip-build`.

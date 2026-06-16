@@ -3,8 +3,8 @@
     <div class="brand">
       <span class="brand-mark">OC</span>
       <div>
-        <strong>Orkestr CRM</strong>
-        <small>Docker CRM ledger</small>
+        <strong>oXRM</strong>
+        <small>Docker relationship system</small>
       </div>
     </div>
 
@@ -15,6 +15,17 @@
         </button>
       }
     </nav>
+
+    <div class="view-nav" aria-label="Configured views">
+      <span>Views</span>
+      @for (view of views(); track view.id) {
+        <button type="button" [class.active]="view.key === selectedViewKey()" (click)="selectView(view)">
+          {{ view.name }}
+        </button>
+      } @empty {
+        <small>No configured views</small>
+      }
+    </div>
   </aside>
 
   <section class="workspace">
@@ -71,8 +82,11 @@
                   @for (event of events().slice(0, 5); track event.id) {
                     <button type="button" class="queue-row action-row" [class.selected]="isSelected('event', event.id)" (click)="selectEvent(event)">
                       <div>
-                        <strong>{{ event.subject || event.type }}</strong>
-                        <span>{{ event.channel }} · {{ event.direction }}</span>
+                        <strong>{{ eventTitle(event) }}</strong>
+                        <span>{{ eventSubtitle(event) }}</span>
+                        @if (eventSnippet(event)) {
+                          <small>{{ eventSnippet(event) }}</small>
+                        }
                       </div>
                       <time>{{ event.occurredAt | date:'short' }}</time>
                     </button>
@@ -121,6 +135,49 @@
             </section>
           }
 
+          @case ("Views") {
+            <section class="panels single">
+              <article class="panel">
+                <header>
+                  <div>
+                    <h2>{{ viewResult()?.view?.name || selectedView()?.name || 'Saved Views' }}</h2>
+                    <p>{{ viewResult()?.view?.objectType || selectedView()?.objectType || 'object' }} · {{ viewResult()?.returned || 0 }} of {{ viewResult()?.total || 0 }}</p>
+                  </div>
+                  <button type="button" (click)="runSelectedView()">Refresh</button>
+                </header>
+
+                @if (viewError()) {
+                  <div class="empty error">{{ viewError() }}</div>
+                } @else if (viewLoading()) {
+                  <div class="empty">Loading view...</div>
+                } @else if (visibleViewRows().length) {
+                  <div class="table-wrap">
+                    <table class="view-table">
+                      <thead>
+                        <tr>
+                          @for (column of visibleViewColumns(); track column) {
+                            <th>{{ columnLabel(column) }}</th>
+                          }
+                        </tr>
+                      </thead>
+                      <tbody>
+                        @for (row of visibleViewRows(); track row['id']) {
+                          <tr>
+                            @for (column of visibleViewColumns(); track column) {
+                              <td>{{ viewCell(row, column) }}</td>
+                            }
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                } @else {
+                  <div class="empty">No records match this view.</div>
+                }
+              </article>
+            </section>
+          }
+
           @case ("Tasks") {
             <section class="panels single">
               <article class="panel">
@@ -156,10 +213,10 @@
                   @for (event of events(); track event.id) {
                     <button type="button" class="queue-row action-row event-row" [class.selected]="isSelected('event', event.id)" (click)="selectEvent(event)">
                       <div>
-                        <strong>{{ event.subject || event.type }}</strong>
-                        <span>{{ event.channel }} · {{ event.direction }} · {{ event.lead?.fullName || 'unlinked' }}</span>
-                        @if (event.body) {
-                          <small>{{ event.body }}</small>
+                        <strong>{{ eventTitle(event) }}</strong>
+                        <span>{{ eventSubtitle(event) }}</span>
+                        @if (eventSnippet(event)) {
+                          <small>{{ eventSnippet(event) }}</small>
                         }
                       </div>
                       <time>{{ event.occurredAt | date:'short' }}</time>
@@ -190,9 +247,9 @@
                   <div class="queue-row">
                     <div>
                       <strong>Runtime</strong>
-                      <span>Docker instance; CLI and MCP run inside the instance network.</span>
+                      <span>Docker instance; oXRM CLI and MCP run inside the instance network.</span>
                     </div>
-                    <time>ocrm</time>
+                    <time>oxrm</time>
                   </div>
                 </div>
               </article>

@@ -32,6 +32,17 @@ import { EventRow } from "./models";
         <p>{{ event.body || "No body." }}</p>
       </section>
 
+      @if (knownMetadataEntries().length > 0) {
+        <section class="detail-section">
+          <h3>Outreach Fields</h3>
+          <dl class="detail-grid">
+            @for (entry of knownMetadataEntries(); track entry.label) {
+              <div><dt>{{ entry.label }}</dt><dd>{{ entry.value }}</dd></div>
+            }
+          </dl>
+        </section>
+      }
+
       <section class="detail-section">
         <h3>Metadata</h3>
         <pre>{{ event.metadata || {} | json }}</pre>
@@ -41,4 +52,20 @@ import { EventRow } from "./models";
 })
 export class EventDetailComponent {
   @Input({ required: true }) event!: EventRow;
+
+  knownMetadataEntries() {
+    const metadata = this.event.metadata ?? {};
+    return [
+      ["Source query", metadata.sourceQuery],
+      ["Search page", metadata.searchPage],
+      ["Audit directory", metadata.auditDirectory],
+      ["LinkedIn result", metadata.linkedinResult],
+      ["Row text", metadata.rowText],
+      ["Profile URL", metadata.profileUrl],
+      ["Note status", metadata.noteStatus],
+      ["Proposed note", metadata.proposedNote]
+    ]
+      .filter(([, value]) => value !== undefined && value !== null && value !== "")
+      .map(([label, value]) => ({ label: String(label), value: String(value) }));
+  }
 }

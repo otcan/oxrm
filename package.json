@@ -1,7 +1,7 @@
 {
   "name": "orkestr-crm",
-  "version": "0.1.0",
-  "description": "MCP-first outreach ledger for agent-operated CRM workflows.",
+  "version": "0.2.0",
+  "description": "MCP-first oXRM relationship system for agent-operated workflows.",
   "private": true,
   "license": "MIT",
   "repository": {
@@ -30,6 +30,7 @@
     "dev:api": "scripts/crm dev api",
     "dev:mcp": "scripts/crm dev mcp",
     "dev:web": "scripts/crm dev web",
+    "oxrm": "scripts/crm cli",
     "crm": "scripts/crm cli",
     "smoke": "scripts/crm smoke",
     "db:generate": "scripts/crm db generate",

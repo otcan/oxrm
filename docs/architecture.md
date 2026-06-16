@@ -1,8 +1,10 @@
-# Orkestr CRM Architecture
+# oXRM Architecture
+
+oXRM is the product shorthand for Orkestr XRM. Operator-facing commands use `oxrm`; some internal package scopes and Docker project names still carry the older CRM name for compatibility until a separate runtime identifier migration is planned.
 
 ## Goal
 
-Orkestr CRM is a minimal, containerized, MCP-first CRM for tracking LinkedIn outreach flows, Sales Navigator work, email conversations, and scheduling activity across multiple operators and agents.
+oXRM is a minimal, containerized, MCP-first relationship system. The first implemented domain is an outreach ledger for tracking LinkedIn outreach flows, Sales Navigator work, email conversations, and scheduling activity across multiple operators and agents.
 
 The system should be easy to run, easy to back up, and safe for agents to operate directly. The web UI is important, but the primary product contract is the agent tool surface: agents should be able to inspect CRM state, plan work, execute approved updates, sync integrations, and propose code changes through dedicated pull requests.
 
@@ -381,6 +383,25 @@ Domain modules:
 
 ## Core Data Model
 
+The current data model is outreach-ledger-first. The oXRM pivot adds generic records and typed relationships without breaking the existing lead, assignment, activity, and task flows.
+
+Generic record persistence should be hybrid:
+
+- PostgreSQL is the transactional source of truth for records, relationships, tasks, activities, object definitions, and saved views.
+- Append-friendly record/event files are allowed for fast writes, auditability, export, and recovery workflows, but not as unshared container-local canonical state.
+- Searchable projections or indexes should be maintained for fast lookup across core fields, custom fields, relationship edges, and recent timeline data.
+- The design target is up to 1M records per Docker-isolated instance before requiring a different storage architecture.
+- File formats must be deterministic and chunkable so backfills, reindexing, and public-safe exports can be run incrementally.
+
+Outreach remains the first bundled domain. Job search is the first non-outreach proof preset because it exercises companies, contacts, jobs, applications, interviews, referrals, documents, follow-up tasks, timelines, and relationship graph traversal without adding domain assumptions to the generic core. Future templates should remain seed/configuration packages until repeated workflows prove that a domain deserves first-class code.
+
+Saved views are the human and agent entry point into templates:
+
+- templates define default views by `template_key` and generic object type slug
+- the API lists/runs views through `/api/views`
+- MCP exposes `xrm.list_views`, `xrm.create_view`, and `xrm.run_view`
+- the web UI renders configured table views while legacy outreach screens remain available for operational compatibility
+
 ### Lead
 
 A lead is a person or company contact being tracked.
@@ -736,17 +757,24 @@ Backup manifest:
 
 ## Multi-Instance Rules
 
-The API must be stateless.
+Instance isolation is a Docker/runtime concern, not a product-level instance-management model in the repository. The API must be stateless.
 
 Rules:
 
-- No local file storage for runtime data.
+- No unshared local container filesystem for canonical runtime data.
 - All durable state goes to PostgreSQL.
 - Long-running work goes through Redis queues.
 - Scheduled jobs use distributed locks.
 - Migrations run as a one-shot container, not from every API instance.
 - Backups run from one backup worker, protected by a lock.
 - Connector sync jobs are idempotent and keyed by provider external IDs.
+- Per-instance env files, Docker project names, host ports, and volumes provide isolation.
+- Do not add repo-level tenant or instance-management abstractions until Docker-level isolation is proven insufficient.
+
+Migration rule:
+
+- Every schema migration must be paired with a manual migration note covering required data updates, verification, and rollback impact.
+- At this stage, do not rely on old compatibility paths silently preserving behavior across migrations.
 
 ## Agent Branch And PR Workflow
 

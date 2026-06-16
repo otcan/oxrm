@@ -31,7 +31,7 @@ export function loadBackupConfig(): BackupConfig {
     githubRepo: githubRepo ?? "local/dev-backups",
     githubToken,
     workspace: process.env.BACKUP_WORKSPACE ?? ".backups",
-    gitAuthorName: process.env.BACKUP_GIT_AUTHOR_NAME ?? "Orkestr CRM Backup",
+    gitAuthorName: process.env.BACKUP_GIT_AUTHOR_NAME ?? "oXRM Backup",
     gitAuthorEmail: process.env.BACKUP_GIT_AUTHOR_EMAIL ?? "backups@orkestr.local",
     nodeEnv
   };

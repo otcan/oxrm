@@ -348,6 +348,125 @@ export const assignments = pgTable(
   ]
 );
 
+export const xrmObjectTypes = pgTable(
+  "xrm_object_types",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    slug: text("slug").notNull(),
+    label: text("label").notNull(),
+    pluralLabel: text("plural_label").notNull(),
+    icon: text("icon"),
+    displayField: text("display_field").notNull().default("name"),
+    description: text("description"),
+    templateKey: text("template_key"),
+    system: boolean("system").notNull().default(false),
+    active: boolean("active").notNull().default(true),
+    metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
+    ...timestamps
+  },
+  (table) => [
+    uniqueIndex("xrm_object_types_slug_unique").on(table.slug),
+    index("xrm_object_types_template_idx").on(table.templateKey)
+  ]
+);
+
+export const xrmFieldDefinitions = pgTable(
+  "xrm_field_definitions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    objectTypeId: uuid("object_type_id")
+      .notNull()
+      .references(() => xrmObjectTypes.id, { onDelete: "cascade" }),
+    key: text("key").notNull(),
+    label: text("label").notNull(),
+    dataType: text("data_type").notNull().default("text"),
+    required: boolean("required").notNull().default(false),
+    indexed: boolean("indexed").notNull().default(false),
+    config: jsonb("config").notNull().default(sql`'{}'::jsonb`),
+    ...timestamps
+  },
+  (table) => [
+    uniqueIndex("xrm_field_definitions_object_key_unique").on(table.objectTypeId, table.key),
+    index("xrm_field_definitions_object_idx").on(table.objectTypeId)
+  ]
+);
+
+export const xrmRecords = pgTable(
+  "xrm_records",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    objectTypeId: uuid("object_type_id")
+      .notNull()
+      .references(() => xrmObjectTypes.id, { onDelete: "restrict" }),
+    externalKey: text("external_key"),
+    displayName: text("display_name").notNull(),
+    fields: jsonb("fields").notNull().default(sql`'{}'::jsonb`),
+    searchText: text("search_text").notNull().default(""),
+    status: text("status").notNull().default("active"),
+    source: text("source"),
+    ownerAgentId: uuid("owner_agent_id").references(() => agents.id),
+    legacyEntityType: text("legacy_entity_type"),
+    legacyEntityId: uuid("legacy_entity_id"),
+    metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    ...timestamps
+  },
+  (table) => [
+    uniqueIndex("xrm_records_object_external_unique").on(table.objectTypeId, table.externalKey),
+    index("xrm_records_object_updated_idx").on(table.objectTypeId, table.updatedAt),
+    index("xrm_records_search_idx").on(table.searchText),
+    index("xrm_records_legacy_idx").on(table.legacyEntityType, table.legacyEntityId),
+    index("xrm_records_status_idx").on(table.status)
+  ]
+);
+
+export const xrmRelationshipTypes = pgTable(
+  "xrm_relationship_types",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    key: text("key").notNull(),
+    label: text("label").notNull(),
+    inverseLabel: text("inverse_label"),
+    sourceObjectTypeId: uuid("source_object_type_id").references(() => xrmObjectTypes.id, { onDelete: "set null" }),
+    targetObjectTypeId: uuid("target_object_type_id").references(() => xrmObjectTypes.id, { onDelete: "set null" }),
+    cardinality: text("cardinality").notNull().default("many_to_many"),
+    metadataSchema: jsonb("metadata_schema").notNull().default(sql`'{}'::jsonb`),
+    system: boolean("system").notNull().default(false),
+    active: boolean("active").notNull().default(true),
+    ...timestamps
+  },
+  (table) => [
+    uniqueIndex("xrm_relationship_types_key_unique").on(table.key),
+    index("xrm_relationship_types_source_target_idx").on(table.sourceObjectTypeId, table.targetObjectTypeId)
+  ]
+);
+
+export const xrmRecordRelationships = pgTable(
+  "xrm_record_relationships",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    relationshipTypeId: uuid("relationship_type_id")
+      .notNull()
+      .references(() => xrmRelationshipTypes.id, { onDelete: "restrict" }),
+    sourceRecordId: uuid("source_record_id")
+      .notNull()
+      .references(() => xrmRecords.id, { onDelete: "cascade" }),
+    targetRecordId: uuid("target_record_id")
+      .notNull()
+      .references(() => xrmRecords.id, { onDelete: "cascade" }),
+    metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
+    source: text("source"),
+    createdByAgentId: uuid("created_by_agent_id").references(() => agents.id),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    ...timestamps
+  },
+  (table) => [
+    uniqueIndex("xrm_record_relationships_unique").on(table.relationshipTypeId, table.sourceRecordId, table.targetRecordId),
+    index("xrm_record_relationships_source_idx").on(table.sourceRecordId),
+    index("xrm_record_relationships_target_idx").on(table.targetRecordId)
+  ]
+);
+
 export const tasks = pgTable(
   "tasks",
   {
@@ -363,6 +482,7 @@ export const tasks = pgTable(
     companyId: uuid("company_id").references(() => companies.id, { onDelete: "set null" }),
     leadId: uuid("lead_id").references(() => leads.id, { onDelete: "set null" }),
     assignmentId: uuid("assignment_id").references(() => assignments.id, { onDelete: "set null" }),
+    xrmRecordId: uuid("xrm_record_id").references(() => xrmRecords.id, { onDelete: "set null" }),
     idempotencyKey: text("idempotency_key"),
     metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
     ...timestamps
@@ -371,7 +491,8 @@ export const tasks = pgTable(
     uniqueIndex("tasks_idempotency_key_unique").on(table.idempotencyKey),
     index("tasks_status_due_idx").on(table.status, table.dueAt),
     index("tasks_owner_idx").on(table.ownerAgentId),
-    index("tasks_lead_idx").on(table.leadId)
+    index("tasks_lead_idx").on(table.leadId),
+    index("tasks_xrm_record_idx").on(table.xrmRecordId)
   ]
 );
 
@@ -399,6 +520,7 @@ export const viewDefinitions = pgTable(
     name: text("name").notNull(),
     description: text("description"),
     objectType: text("object_type").notNull(),
+    templateKey: text("template_key"),
     layout: text("layout").notNull().default("table"),
     columns: jsonb("columns").notNull().default(sql`'[]'::jsonb`),
     filters: jsonb("filters").notNull().default(sql`'[]'::jsonb`),
@@ -409,7 +531,8 @@ export const viewDefinitions = pgTable(
   },
   (table) => [
     uniqueIndex("view_definitions_key_unique").on(table.key),
-    index("view_definitions_object_type_idx").on(table.objectType)
+    index("view_definitions_object_type_idx").on(table.objectType),
+    index("view_definitions_template_idx").on(table.templateKey, table.objectType)
   ]
 );
 
@@ -456,6 +579,7 @@ export const activities = pgTable(
     companyId: uuid("company_id").references(() => companies.id, { onDelete: "set null" }),
     assignmentId: uuid("assignment_id").references(() => assignments.id, { onDelete: "set null" }),
     taskId: uuid("task_id").references(() => tasks.id, { onDelete: "set null" }),
+    xrmRecordId: uuid("xrm_record_id").references(() => xrmRecords.id, { onDelete: "set null" }),
     integrationAccountId: uuid("integration_account_id").references(() => integrationAccounts.id),
     type: activityType("type").notNull(),
     channel: channel("channel").notNull(),
@@ -478,6 +602,7 @@ export const activities = pgTable(
     index("activities_company_time_idx").on(table.companyId, table.occurredAt),
     index("activities_assignment_time_idx").on(table.assignmentId, table.occurredAt),
     index("activities_task_time_idx").on(table.taskId, table.occurredAt),
+    index("activities_xrm_record_time_idx").on(table.xrmRecordId, table.occurredAt),
     index("activities_channel_time_idx").on(table.channel, table.occurredAt),
     uniqueIndex("activities_idempotency_key_unique").on(table.idempotencyKey),
     uniqueIndex("activities_external_unique").on(table.integrationAccountId, table.externalId)
@@ -627,12 +752,65 @@ export const flowStepRelations = relations(flowSteps, ({ one }) => ({
   flow: one(flows, { fields: [flowSteps.flowId], references: [flows.id] })
 }));
 
+export const xrmObjectTypeRelations = relations(xrmObjectTypes, ({ many }) => ({
+  fields: many(xrmFieldDefinitions),
+  records: many(xrmRecords),
+  sourceRelationshipTypes: many(xrmRelationshipTypes, { relationName: "sourceObjectType" }),
+  targetRelationshipTypes: many(xrmRelationshipTypes, { relationName: "targetObjectType" })
+}));
+
+export const xrmFieldDefinitionRelations = relations(xrmFieldDefinitions, ({ one }) => ({
+  objectType: one(xrmObjectTypes, { fields: [xrmFieldDefinitions.objectTypeId], references: [xrmObjectTypes.id] })
+}));
+
+export const xrmRecordRelations = relations(xrmRecords, ({ one, many }) => ({
+  objectType: one(xrmObjectTypes, { fields: [xrmRecords.objectTypeId], references: [xrmObjectTypes.id] }),
+  ownerAgent: one(agents, { fields: [xrmRecords.ownerAgentId], references: [agents.id] }),
+  sourceRelationships: many(xrmRecordRelationships, { relationName: "sourceRecord" }),
+  targetRelationships: many(xrmRecordRelationships, { relationName: "targetRecord" }),
+  tasks: many(tasks),
+  activities: many(activities)
+}));
+
+export const xrmRelationshipTypeRelations = relations(xrmRelationshipTypes, ({ one, many }) => ({
+  sourceObjectType: one(xrmObjectTypes, {
+    fields: [xrmRelationshipTypes.sourceObjectTypeId],
+    references: [xrmObjectTypes.id],
+    relationName: "sourceObjectType"
+  }),
+  targetObjectType: one(xrmObjectTypes, {
+    fields: [xrmRelationshipTypes.targetObjectTypeId],
+    references: [xrmObjectTypes.id],
+    relationName: "targetObjectType"
+  }),
+  relationships: many(xrmRecordRelationships)
+}));
+
+export const xrmRecordRelationshipRelations = relations(xrmRecordRelationships, ({ one }) => ({
+  relationshipType: one(xrmRelationshipTypes, {
+    fields: [xrmRecordRelationships.relationshipTypeId],
+    references: [xrmRelationshipTypes.id]
+  }),
+  sourceRecord: one(xrmRecords, {
+    fields: [xrmRecordRelationships.sourceRecordId],
+    references: [xrmRecords.id],
+    relationName: "sourceRecord"
+  }),
+  targetRecord: one(xrmRecords, {
+    fields: [xrmRecordRelationships.targetRecordId],
+    references: [xrmRecords.id],
+    relationName: "targetRecord"
+  }),
+  createdByAgent: one(agents, { fields: [xrmRecordRelationships.createdByAgentId], references: [agents.id] })
+}));
+
 export const activityRelations = relations(activities, ({ one }) => ({
   lead: one(leads, { fields: [activities.leadId], references: [leads.id] }),
   person: one(people, { fields: [activities.personId], references: [people.id] }),
   company: one(companies, { fields: [activities.companyId], references: [companies.id] }),
   assignment: one(assignments, { fields: [activities.assignmentId], references: [assignments.id] }),
   task: one(tasks, { fields: [activities.taskId], references: [tasks.id] }),
+  xrmRecord: one(xrmRecords, { fields: [activities.xrmRecordId], references: [xrmRecords.id] }),
   integrationAccount: one(integrationAccounts, {
     fields: [activities.integrationAccountId],
     references: [integrationAccounts.id]
@@ -649,6 +827,7 @@ export const taskRelations = relations(tasks, ({ one, many }) => ({
   company: one(companies, { fields: [tasks.companyId], references: [companies.id] }),
   lead: one(leads, { fields: [tasks.leadId], references: [leads.id] }),
   assignment: one(assignments, { fields: [tasks.assignmentId], references: [assignments.id] }),
+  xrmRecord: one(xrmRecords, { fields: [tasks.xrmRecordId], references: [xrmRecords.id] }),
   activities: many(activities),
   events: many(taskEvents)
 }));
@@ -677,6 +856,16 @@ export type Activity = typeof activities.$inferSelect;
 export type NewActivity = typeof activities.$inferInsert;
 export type Task = typeof tasks.$inferSelect;
 export type NewTask = typeof tasks.$inferInsert;
+export type XrmObjectType = typeof xrmObjectTypes.$inferSelect;
+export type NewXrmObjectType = typeof xrmObjectTypes.$inferInsert;
+export type XrmFieldDefinition = typeof xrmFieldDefinitions.$inferSelect;
+export type NewXrmFieldDefinition = typeof xrmFieldDefinitions.$inferInsert;
+export type XrmRecord = typeof xrmRecords.$inferSelect;
+export type NewXrmRecord = typeof xrmRecords.$inferInsert;
+export type XrmRelationshipType = typeof xrmRelationshipTypes.$inferSelect;
+export type NewXrmRelationshipType = typeof xrmRelationshipTypes.$inferInsert;
+export type XrmRecordRelationship = typeof xrmRecordRelationships.$inferSelect;
+export type NewXrmRecordRelationship = typeof xrmRecordRelationships.$inferInsert;
 export type ViewDefinition = typeof viewDefinitions.$inferSelect;
 export type NewViewDefinition = typeof viewDefinitions.$inferInsert;
 export type IntegrationSyncRun = typeof integrationSyncRuns.$inferSelect;

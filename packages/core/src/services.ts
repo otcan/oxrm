@@ -18,19 +18,34 @@ import {
   taskEvents,
   tasks,
   viewDefinitions,
+  xrmFieldDefinitions,
+  xrmObjectTypes,
+  xrmRecordRelationships,
+  xrmRecords,
+  xrmRelationshipTypes,
   type Database
 } from "@orkestr-crm/db";
 import {
+  createXrmObjectTypeSchema,
+  createXrmRelationshipTypeSchema,
   createActivitySchema,
   createAssignmentSchema,
   createLeadSchema,
   createTaskSchema,
+  OXRM_PRODUCT_NAME,
+  OXRM_PRODUCT_SLUG,
+  OXRM_PRODUCT_VERSION,
+  linkXrmRecordsSchema,
+  listXrmRelationshipsSchema,
   recordOutreachEventSchema,
+  searchXrmRecordsSchema,
   updateTaskSchema,
   updateAssignmentSchema,
-  updateLeadSchema
+  updateLeadSchema,
+  updateXrmObjectTypeSchema,
+  upsertXrmRecordSchema
 } from "@orkestr-crm/shared";
-import { and, desc, eq, gte, ilike, inArray, lte, or } from "drizzle-orm";
+import { and, desc, eq, gte, ilike, inArray, isNull, lte, or } from "drizzle-orm";
 import { z } from "zod";
 
 export interface ServiceContext {
@@ -40,20 +55,35 @@ export interface ServiceContext {
 type Tx = Parameters<Parameters<Database["transaction"]>[0]>[0];
 type LeadInput = z.infer<typeof createLeadSchema>;
 type ActivityInput = z.infer<typeof createActivitySchema>;
+type OutreachEventInput = z.infer<typeof recordOutreachEventSchema>;
 
-const viewObjectTypeSchema = z.enum(["lead", "person", "company", "task", "event"]);
+const viewObjectTypeSchema = z
+  .string()
+  .min(2)
+  .max(96)
+  .regex(/^[a-z][a-z0-9_.-]*$/);
 const viewLayoutSchema = z.enum(["table", "cards", "timeline"]);
 const viewOperatorSchema = z.enum(["equals", "contains", "starts_with", "is_empty", "is_not_empty", "before", "after"]);
 const viewDirectionSchema = z.enum(["asc", "desc"]);
+const templateKeySchema = z
+  .string()
+  .min(2)
+  .max(96)
+  .regex(/^[a-z][a-z0-9_.-]*$/);
+const viewFieldSchema = z
+  .string()
+  .min(1)
+  .max(128)
+  .regex(/^[a-zA-Z0-9_.-]+$/);
 
 const viewFilterSchema = z.object({
-  field: z.string().min(1),
+  field: viewFieldSchema,
   operator: viewOperatorSchema.default("contains"),
   value: z.unknown().optional()
 });
 
 const viewSortSchema = z.object({
-  field: z.string().min(1),
+  field: viewFieldSchema,
   direction: viewDirectionSchema.default("asc")
 });
 
@@ -66,8 +96,9 @@ const viewDefinitionInputSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
   objectType: viewObjectTypeSchema,
+  templateKey: templateKeySchema.optional(),
   layout: viewLayoutSchema.default("table"),
-  columns: z.array(z.string().min(1)).default([]),
+  columns: z.array(viewFieldSchema).default([]),
   filters: z.array(viewFilterSchema).default([]),
   sort: z.array(viewSortSchema).default([]),
   isDefault: z.boolean().default(false),
@@ -84,11 +115,24 @@ const viewRunInputSchema = z.object({
   limit: z.number().int().min(1).max(500).optional()
 });
 
+const backfillLegacyOutreachEventsSchema = z.object({
+  dryRun: z.boolean().default(true),
+  activityId: z.string().uuid().optional(),
+  leadId: z.string().uuid().optional(),
+  channel: z.enum(["linkedin", "salesnav", "email", "scheduler", "manual"]).default("linkedin"),
+  limit: z.number().int().min(1).max(500).default(50),
+  createTasks: z.boolean().default(true),
+  overwriteConfirmedBody: z.boolean().default(false)
+});
+
 type ViewObjectType = z.infer<typeof viewObjectTypeSchema>;
 type ViewFilter = z.infer<typeof viewFilterSchema>;
 type ViewSort = z.infer<typeof viewSortSchema>;
 
-const viewFields: Record<ViewObjectType, string[]> = {
+const legacyViewObjectTypes = ["lead", "person", "company", "task", "event"] as const;
+type LegacyViewObjectType = (typeof legacyViewObjectTypes)[number];
+
+const legacyViewFields: Record<LegacyViewObjectType, string[]> = {
   lead: [
     "id",
     "fullName",
@@ -121,13 +165,31 @@ const viewFields: Record<ViewObjectType, string[]> = {
   ]
 };
 
-const defaultViewColumns: Record<ViewObjectType, string[]> = {
+const legacyDefaultViewColumns: Record<LegacyViewObjectType, string[]> = {
   lead: ["fullName", "company", "email", "source", "updatedAt"],
   person: ["fullName", "title", "location", "source", "updatedAt"],
   company: ["name", "primaryDomain", "industry", "source", "updatedAt"],
   task: ["title", "status", "type", "priority", "dueAt"],
   event: ["type", "channel", "direction", "lead.fullName", "occurredAt"]
 };
+
+const xrmCoreViewFields = new Set([
+  "id",
+  "objectType",
+  "displayName",
+  "externalKey",
+  "status",
+  "source",
+  "createdAt",
+  "updatedAt",
+  "taskCount",
+  "eventCount",
+  "relationshipCount",
+  "sourceRelationshipCount",
+  "targetRelationshipCount",
+  "relationshipSummary"
+]);
+const xrmDefaultViewColumns = ["displayName", "status", "source", "updatedAt"];
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -151,7 +213,7 @@ function emailDomain(email: string | undefined) {
 }
 
 function normalizeViewConfig(input: z.infer<typeof viewDefinitionInputSchema>) {
-  const columns = input.columns.length > 0 ? input.columns : defaultViewColumns[input.objectType];
+  const columns = input.columns.length > 0 ? input.columns : defaultViewColumns(input.objectType);
   validateViewFields(input.objectType, columns);
   validateViewFields(
     input.objectType,
@@ -193,11 +255,31 @@ function normalizeViewPatch(existingObjectType: ViewObjectType, input: z.infer<t
 }
 
 function validateViewFields(objectType: ViewObjectType, fields: string[]) {
-  const allowed = new Set(viewFields[objectType]);
-  const invalid = fields.filter((field) => !allowed.has(field));
+  const invalid = fields.filter((field) => !isAllowedViewField(objectType, field));
   if (invalid.length > 0) {
     throw new Error(`invalid_view_fields:${invalid.join(",")}`);
   }
+}
+
+function defaultViewColumns(objectType: ViewObjectType) {
+  return isLegacyViewObjectType(objectType) ? legacyDefaultViewColumns[objectType] : xrmDefaultViewColumns;
+}
+
+function isLegacyViewObjectType(objectType: string): objectType is LegacyViewObjectType {
+  return legacyViewObjectTypes.includes(objectType as LegacyViewObjectType);
+}
+
+function isAllowedViewField(objectType: ViewObjectType, field: string) {
+  if (field.startsWith("fields.") || field.startsWith("relationships.")) {
+    return true;
+  }
+  if (xrmCoreViewFields.has(field)) {
+    return true;
+  }
+  if (isLegacyViewObjectType(objectType) && legacyViewFields[objectType].includes(field)) {
+    return true;
+  }
+  return /^[a-zA-Z][a-zA-Z0-9_-]*$/.test(field);
 }
 
 function parseViewFilters(value: unknown, objectType: ViewObjectType) {
@@ -220,7 +302,7 @@ function parseViewSort(value: unknown, objectType: ViewObjectType) {
 
 function parseViewColumns(value: unknown, objectType: ViewObjectType) {
   const columns = z.array(z.string().min(1)).parse(value ?? []);
-  const resolved = columns.length > 0 ? columns : defaultViewColumns[objectType];
+  const resolved = columns.length > 0 ? columns : defaultViewColumns(objectType);
   validateViewFields(objectType, resolved);
   return resolved;
 }
@@ -300,6 +382,83 @@ function runViewPipeline<T>(rows: T[], filters: ViewFilter[], sort: ViewSort[], 
   };
 }
 
+function jsonObject(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function summarizeRelationship(
+  relationship: {
+    relationshipType?: { label?: string | null; inverseLabel?: string | null } | null;
+    sourceRecord?: { displayName: string } | null;
+    targetRecord?: { displayName: string } | null;
+  },
+  direction: "source" | "target"
+) {
+  const label =
+    direction === "source"
+      ? relationship.relationshipType?.label
+      : relationship.relationshipType?.inverseLabel ?? relationship.relationshipType?.label;
+  const other = direction === "source" ? relationship.targetRecord?.displayName : relationship.sourceRecord?.displayName;
+  return [label, other].filter(Boolean).join(" ");
+}
+
+function toXrmViewRow(record: {
+  id: string;
+  externalKey: string | null;
+  displayName: string;
+  fields: unknown;
+  status: string;
+  source: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  objectType?: { slug: string; label: string; templateKey?: string | null } | null;
+  sourceRelationships?: Array<{
+    sourceRecordId: string;
+    targetRecordId: string;
+    relationshipType?: { label?: string | null; inverseLabel?: string | null } | null;
+    targetRecord?: { displayName: string } | null;
+  }>;
+  targetRelationships?: Array<{
+    sourceRecordId: string;
+    targetRecordId: string;
+    relationshipType?: { label?: string | null; inverseLabel?: string | null } | null;
+    sourceRecord?: { displayName: string } | null;
+  }>;
+  tasks?: unknown[];
+  activities?: unknown[];
+}) {
+  const fields = jsonObject(record.fields);
+  const sourceRelationships = record.sourceRelationships ?? [];
+  const targetRelationships = record.targetRelationships ?? [];
+  const relationshipSummary = [
+    ...sourceRelationships.map((relationship) => summarizeRelationship(relationship, "source")),
+    ...targetRelationships.map((relationship) => summarizeRelationship(relationship, "target"))
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  return {
+    ...fields,
+    id: record.id,
+    objectType: record.objectType?.slug,
+    objectTypeLabel: record.objectType?.label,
+    templateKey: record.objectType?.templateKey,
+    displayName: record.displayName,
+    externalKey: record.externalKey,
+    fields,
+    status: record.status,
+    source: record.source,
+    taskCount: record.tasks?.length ?? 0,
+    eventCount: record.activities?.length ?? 0,
+    relationshipCount: sourceRelationships.length + targetRelationships.length,
+    sourceRelationshipCount: sourceRelationships.length,
+    targetRelationshipCount: targetRelationships.length,
+    relationshipSummary,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt
+  };
+}
+
 function normalizeDomain(value: string | undefined) {
   const compacted = compactText(value)?.toLowerCase();
   if (!compacted) {
@@ -314,6 +473,200 @@ function normalizeUrl(value: string | undefined) {
     return undefined;
   }
   return compacted.replace(/\/+$/, "").toLowerCase();
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function addDays(date: Date, days: number) {
+  return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
+}
+
+function buildXrmSearchText(input: { displayName: string; fields?: Record<string, unknown>; externalKey?: string | undefined }) {
+  const fieldText = Object.values(input.fields ?? {})
+    .filter((value) => typeof value === "string" || typeof value === "number" || typeof value === "boolean")
+    .map(String)
+    .join(" ");
+  return compactText([input.displayName, input.externalKey, fieldText].filter(Boolean).join(" "))?.toLowerCase() ?? "";
+}
+
+function displayNameFromFields(fields: Record<string, unknown>, displayField: string, fallback: string | undefined) {
+  const value = fields[displayField];
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return compactText(String(value)) ?? fallback ?? "Untitled record";
+  }
+  return fallback ?? "Untitled record";
+}
+
+function mergeOutreachMetadata(activityInput: NonNullable<OutreachEventInput["activity"]>) {
+  const metadata: Record<string, unknown> = isRecord(activityInput.metadata) ? { ...activityInput.metadata } : {};
+  for (const key of [
+    "noteStatus",
+    "proposedNote",
+    "linkedinResult",
+    "sourceQuery",
+    "searchPage",
+    "auditDirectory",
+    "rowText",
+    "profileUrl"
+  ] as const) {
+    if (activityInput[key] !== undefined) {
+      metadata[key] = activityInput[key];
+    }
+  }
+  return metadata;
+}
+
+function outreachTaskDefaults(activityType: string) {
+  switch (activityType) {
+    case "connection_sent":
+    case "connection_request_sent":
+      return { kind: "acceptance-check", titlePrefix: "Check acceptance", type: "follow_up" as const, dueInDays: 5 };
+    case "connection_accepted":
+      return { kind: "first-message-approval", titlePrefix: "Approve first message", type: "approval" as const, dueInDays: 0 };
+    case "message_received":
+    case "email_received":
+      return { kind: "reply-approval", titlePrefix: "Review reply", type: "approval" as const, dueInDays: 0 };
+    case "follow_up_due":
+      return { kind: "follow-up", titlePrefix: "Follow up", type: "follow_up" as const, dueInDays: 0 };
+    default:
+      return undefined;
+  }
+}
+
+async function upsertOutreachNextActionTask(
+  tx: Tx,
+  input: {
+    config: OutreachEventInput["nextActionTask"];
+    activityType: string;
+    lead: typeof leads.$inferSelect;
+    personId?: string | null | undefined;
+    companyId?: string | null | undefined;
+    assignmentId?: string | null | undefined;
+    ownerAgentId?: string | null | undefined;
+    priority: number;
+    occurredAt: Date;
+    assignmentNextActionAt?: Date | null | undefined;
+    profileKey: string;
+  }
+) {
+  if (input.config === false || input.config?.create === false) {
+    return undefined;
+  }
+
+  const defaults = outreachTaskDefaults(input.activityType);
+  if (!defaults && !input.config) {
+    return undefined;
+  }
+
+  const config = input.config || undefined;
+  const dueAt =
+    config?.dueAt !== undefined
+      ? new Date(config.dueAt)
+      : input.assignmentNextActionAt ?? addDays(input.occurredAt, config?.dueInDays ?? defaults?.dueInDays ?? 0);
+  const kind = defaults?.kind ?? "next-action";
+  const title = config?.title ?? `${defaults?.titlePrefix ?? "Next action"}: ${input.lead.fullName}`;
+  const taskType = config?.type ?? defaults?.type ?? "follow_up";
+  const taskStatus = config?.status ?? "open";
+  const priority = config?.priority ?? input.priority;
+  const ownerAgentId = config?.ownerAgentId ?? input.ownerAgentId ?? undefined;
+  const idempotencyKey = config?.idempotencyKey ?? `outreach:${input.profileKey}:${kind}`;
+  const metadata = {
+    source: "outreach-event",
+    activityType: input.activityType,
+    nextActionKind: kind,
+    ...(config?.metadata ?? {})
+  };
+
+  const [task] = await tx
+    .insert(tasks)
+    .values({
+      title,
+      description: config?.description,
+      type: taskType,
+      status: taskStatus,
+      priority,
+      dueAt,
+      ownerAgentId,
+      personId: input.personId ?? undefined,
+      companyId: input.companyId ?? undefined,
+      leadId: input.lead.id,
+      assignmentId: input.assignmentId ?? undefined,
+      idempotencyKey,
+      metadata
+    })
+    .onConflictDoUpdate({
+      target: tasks.idempotencyKey,
+      set: {
+        title,
+        description: config?.description,
+        type: taskType,
+        status: taskStatus,
+        priority,
+        dueAt,
+        ownerAgentId,
+        personId: input.personId ?? undefined,
+        companyId: input.companyId ?? undefined,
+        leadId: input.lead.id,
+        assignmentId: input.assignmentId ?? undefined,
+        metadata,
+        updatedAt: new Date()
+      }
+    })
+    .returning();
+
+  return task;
+}
+
+function firstMatch(text: string, patterns: RegExp[]) {
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    const value = match?.[1]?.trim();
+    if (value) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function parseLegacyOutreachBody(body: string | null | undefined, externalUrl: string | null | undefined) {
+  const raw = body?.trim();
+  if (!raw) {
+    return undefined;
+  }
+
+  const linkedinResult = firstMatch(raw, [
+    /linkedin(?: result)?:\s*([^\n]+)/i,
+    /result:\s*([^\n]+)/i,
+    /\b(native_[a-z0-9_]+|textarea_not_found|verified_pending|pending)\b/i
+  ]);
+  const sourceQuery = firstMatch(raw, [/source query:\s*([^\n]+)/i, /query:\s*([^\n]+)/i]);
+  const searchPageText = firstMatch(raw, [/search page:\s*(\d+)/i, /page:\s*(\d+)/i]);
+  const auditDirectory = firstMatch(raw, [/audit directory:\s*([^\n]+)/i, /audit:\s*([^\n]+)/i, /(\/[^\s]+(?:audit|crawler|connect)[^\s]*)/i]);
+  const rowText = firstMatch(raw, [/row text:\s*([\s\S]+)/i]);
+  const profileUrl = normalizeUrl(
+    externalUrl ??
+      firstMatch(raw, [/(https?:\/\/(?:www\.)?linkedin\.com\/in\/[^\s,)]+)/i, /profile(?: url)?:\s*([^\n]+)/i])
+  );
+  const lower = raw.toLowerCase();
+  const noteStatus = lower.includes("no note")
+    ? "no_note"
+    : lower.includes("confirmed_sent") || lower.includes("note confirmed") || lower.includes("note sent")
+      ? "confirmed_sent"
+      : "unconfirmed";
+
+  return {
+    noteStatus,
+    proposedNote: noteStatus === "confirmed_sent" || noteStatus === "no_note" ? undefined : raw,
+    linkedinResult,
+    sourceQuery,
+    searchPage: searchPageText ? Number(searchPageText) : undefined,
+    auditDirectory,
+    rowText,
+    profileUrl,
+    originalBody: raw
+  };
 }
 
 function splitName(fullName: string) {
@@ -605,6 +958,7 @@ async function resolveActivityLinks(tx: Tx, input: ActivityInput) {
   let personId = input.personId;
   let companyId = input.companyId;
   let taskId = input.taskId;
+  let xrmRecordId = input.xrmRecordId;
 
   if (input.lead) {
     const resolved = await upsertLeadRecord(tx, input.lead);
@@ -623,6 +977,20 @@ async function resolveActivityLinks(tx: Tx, input: ActivityInput) {
     leadId = leadId ?? task?.leadId ?? undefined;
     personId = personId ?? task?.personId ?? undefined;
     companyId = companyId ?? task?.companyId ?? undefined;
+    xrmRecordId = xrmRecordId ?? task?.xrmRecordId ?? undefined;
+  }
+
+  if (xrmRecordId && (!leadId || !personId || !companyId)) {
+    const record = await tx.query.xrmRecords.findFirst({ where: eq(xrmRecords.id, xrmRecordId) });
+    if (record?.legacyEntityType === "lead") {
+      leadId = leadId ?? record.legacyEntityId ?? undefined;
+    }
+    if (record?.legacyEntityType === "person") {
+      personId = personId ?? record.legacyEntityId ?? undefined;
+    }
+    if (record?.legacyEntityType === "company") {
+      companyId = companyId ?? record.legacyEntityId ?? undefined;
+    }
   }
 
   if (leadId && (!personId || !companyId)) {
@@ -636,7 +1004,7 @@ async function resolveActivityLinks(tx: Tx, input: ActivityInput) {
     companyId = person?.companyId ?? undefined;
   }
 
-  return { leadId, personId, companyId, taskId };
+  return { leadId, personId, companyId, taskId, xrmRecordId };
 }
 
 export function createCrmServices({ db }: ServiceContext) {
@@ -645,9 +1013,355 @@ export function createCrmServices({ db }: ServiceContext) {
       const backup = await this.getBackupHealth();
       return {
         status: backup.degraded ? "degraded" : "ok",
-        service: "orkestr-crm-api",
+        service: "oxrm-api",
+        product: {
+          name: OXRM_PRODUCT_NAME,
+          slug: OXRM_PRODUCT_SLUG,
+          version: OXRM_PRODUCT_VERSION
+        },
         backup
       };
+    },
+
+    async listXrmObjectTypes(input: { active?: boolean | undefined; templateKey?: string | undefined; limit?: number | undefined } = {}) {
+      const conditions = [
+        input.active === undefined ? undefined : eq(xrmObjectTypes.active, input.active),
+        input.templateKey ? eq(xrmObjectTypes.templateKey, input.templateKey) : undefined
+      ].filter((condition): condition is NonNullable<typeof condition> => condition !== undefined);
+
+      return db.query.xrmObjectTypes.findMany({
+        where: conditions.length > 0 ? and(...conditions) : undefined,
+        with: { fields: true },
+        orderBy: [desc(xrmObjectTypes.system), desc(xrmObjectTypes.updatedAt)],
+        limit: input.limit ?? 100
+      });
+    },
+
+    async getXrmObjectType(slugOrId: string) {
+      return db.query.xrmObjectTypes.findFirst({
+        where: uuidPattern.test(slugOrId) ? eq(xrmObjectTypes.id, slugOrId) : eq(xrmObjectTypes.slug, slugOrId),
+        with: { fields: true }
+      });
+    },
+
+    async createXrmObjectType(input: unknown) {
+      const parsed = createXrmObjectTypeSchema.parse(input);
+      return db.transaction(async (tx) => {
+        const [objectType] = await tx
+          .insert(xrmObjectTypes)
+          .values({
+            slug: parsed.slug,
+            label: parsed.label,
+            pluralLabel: parsed.pluralLabel ?? `${parsed.label}s`,
+            icon: parsed.icon,
+            displayField: parsed.displayField,
+            description: parsed.description,
+            templateKey: parsed.templateKey,
+            system: parsed.system,
+            active: parsed.active,
+            metadata: parsed.metadata ?? {}
+          })
+          .onConflictDoUpdate({
+            target: xrmObjectTypes.slug,
+            set: {
+              label: parsed.label,
+              pluralLabel: parsed.pluralLabel ?? `${parsed.label}s`,
+              icon: parsed.icon,
+              displayField: parsed.displayField,
+              description: parsed.description,
+              templateKey: parsed.templateKey,
+              system: parsed.system,
+              active: parsed.active,
+              metadata: parsed.metadata ?? {},
+              updatedAt: new Date()
+            }
+          })
+          .returning();
+
+        if (!objectType) {
+          throw new Error("xrm_object_type_upsert_failed");
+        }
+
+        for (const field of parsed.fields) {
+          await tx
+            .insert(xrmFieldDefinitions)
+            .values({
+              objectTypeId: objectType.id,
+              key: field.key,
+              label: field.label,
+              dataType: field.dataType,
+              required: field.required,
+              indexed: field.indexed,
+              config: field.config ?? {}
+            })
+            .onConflictDoUpdate({
+              target: [xrmFieldDefinitions.objectTypeId, xrmFieldDefinitions.key],
+              set: {
+                label: field.label,
+                dataType: field.dataType,
+                required: field.required,
+                indexed: field.indexed,
+                config: field.config ?? {},
+                updatedAt: new Date()
+              }
+            });
+        }
+
+        return tx.query.xrmObjectTypes.findFirst({
+          where: eq(xrmObjectTypes.id, objectType.id),
+          with: { fields: true }
+        });
+      });
+    },
+
+    async updateXrmObjectType(slugOrId: string, input: unknown) {
+      const existing = await this.getXrmObjectType(slugOrId);
+      if (!existing) {
+        return undefined;
+      }
+      const parsed = updateXrmObjectTypeSchema.parse(input);
+      const [updated] = await db
+        .update(xrmObjectTypes)
+        .set({
+          slug: parsed.slug,
+          label: parsed.label,
+          pluralLabel: parsed.pluralLabel,
+          icon: parsed.icon,
+          displayField: parsed.displayField,
+          description: parsed.description,
+          templateKey: parsed.templateKey,
+          system: parsed.system,
+          active: parsed.active,
+          metadata: parsed.metadata,
+          updatedAt: new Date()
+        })
+        .where(eq(xrmObjectTypes.id, existing.id))
+        .returning();
+      return updated;
+    },
+
+    async upsertXrmRecord(input: unknown) {
+      const parsed = upsertXrmRecordSchema.parse(input);
+      return db.transaction(async (tx) => {
+        const objectType = await tx.query.xrmObjectTypes.findFirst({ where: eq(xrmObjectTypes.slug, parsed.objectType) });
+        if (!objectType) {
+          throw new Error(`xrm_object_type_not_found:${parsed.objectType}`);
+        }
+
+        const displayName = displayNameFromFields(parsed.fields, objectType.displayField, parsed.displayName ?? parsed.externalKey);
+        const searchText = buildXrmSearchText({ displayName, fields: parsed.fields, externalKey: parsed.externalKey });
+        const existing =
+          parsed.recordId
+            ? await tx.query.xrmRecords.findFirst({ where: eq(xrmRecords.id, parsed.recordId) })
+            : parsed.externalKey
+              ? await tx.query.xrmRecords.findFirst({
+                  where: and(eq(xrmRecords.objectTypeId, objectType.id), eq(xrmRecords.externalKey, parsed.externalKey))
+                })
+              : undefined;
+
+        if (existing) {
+          const [updated] = await tx
+            .update(xrmRecords)
+            .set({
+              externalKey: parsed.externalKey,
+              displayName,
+              fields: parsed.fields,
+              searchText,
+              status: parsed.status,
+              source: parsed.source,
+              ownerAgentId: parsed.ownerAgentId,
+              legacyEntityType: parsed.legacyEntityType,
+              legacyEntityId: parsed.legacyEntityId,
+              metadata: parsed.metadata ?? {},
+              deletedAt: null,
+              updatedAt: new Date()
+            })
+            .where(eq(xrmRecords.id, existing.id))
+            .returning();
+          return updated;
+        }
+
+        const [created] = await tx
+          .insert(xrmRecords)
+          .values({
+            objectTypeId: objectType.id,
+            externalKey: parsed.externalKey,
+            displayName,
+            fields: parsed.fields,
+            searchText,
+            status: parsed.status,
+            source: parsed.source,
+            ownerAgentId: parsed.ownerAgentId,
+            legacyEntityType: parsed.legacyEntityType,
+            legacyEntityId: parsed.legacyEntityId,
+            metadata: parsed.metadata ?? {}
+          })
+          .returning();
+        return created;
+      });
+    },
+
+    async getXrmRecord(id: string) {
+      return db.query.xrmRecords.findFirst({
+        where: eq(xrmRecords.id, id),
+        with: {
+          objectType: { with: { fields: true } },
+          sourceRelationships: { with: { relationshipType: true, targetRecord: { with: { objectType: true } } } },
+          targetRelationships: { with: { relationshipType: true, sourceRecord: { with: { objectType: true } } } },
+          tasks: true,
+          activities: true
+        }
+      });
+    },
+
+    async searchXrmRecords(input: unknown = {}) {
+      const parsed = searchXrmRecordsSchema.parse(input);
+      const objectType = parsed.objectType
+        ? await db.query.xrmObjectTypes.findFirst({ where: eq(xrmObjectTypes.slug, parsed.objectType) })
+        : undefined;
+      if (parsed.objectType && !objectType) {
+        return [];
+      }
+      const conditions = [
+        objectType ? eq(xrmRecords.objectTypeId, objectType.id) : undefined,
+        parsed.includeDeleted ? undefined : isNull(xrmRecords.deletedAt),
+        parsed.query
+          ? or(ilike(xrmRecords.searchText, `%${parsed.query}%`), ilike(xrmRecords.displayName, `%${parsed.query}%`))
+          : undefined
+      ].filter((condition): condition is NonNullable<typeof condition> => condition !== undefined);
+
+      return db.query.xrmRecords.findMany({
+        where: conditions.length > 0 ? and(...conditions) : undefined,
+        with: { objectType: true },
+        orderBy: [desc(xrmRecords.updatedAt)],
+        limit: parsed.limit
+      });
+    },
+
+    async deleteXrmRecord(id: string) {
+      const [deleted] = await db
+        .update(xrmRecords)
+        .set({ status: "archived", deletedAt: new Date(), updatedAt: new Date() })
+        .where(eq(xrmRecords.id, id))
+        .returning({ id: xrmRecords.id });
+      return { deleted: deleted !== undefined, recordId: id };
+    },
+
+    async createXrmRelationshipType(input: unknown) {
+      const parsed = createXrmRelationshipTypeSchema.parse(input);
+      const [sourceObjectType, targetObjectType] = await Promise.all([
+        parsed.sourceObjectType ? this.getXrmObjectType(parsed.sourceObjectType) : Promise.resolve(undefined),
+        parsed.targetObjectType ? this.getXrmObjectType(parsed.targetObjectType) : Promise.resolve(undefined)
+      ]);
+
+      const [relationshipType] = await db
+        .insert(xrmRelationshipTypes)
+        .values({
+          key: parsed.key,
+          label: parsed.label,
+          inverseLabel: parsed.inverseLabel,
+          sourceObjectTypeId: sourceObjectType?.id,
+          targetObjectTypeId: targetObjectType?.id,
+          cardinality: parsed.cardinality,
+          metadataSchema: parsed.metadataSchema ?? {},
+          system: parsed.system,
+          active: parsed.active
+        })
+        .onConflictDoUpdate({
+          target: xrmRelationshipTypes.key,
+          set: {
+            label: parsed.label,
+            inverseLabel: parsed.inverseLabel,
+            sourceObjectTypeId: sourceObjectType?.id,
+            targetObjectTypeId: targetObjectType?.id,
+            cardinality: parsed.cardinality,
+            metadataSchema: parsed.metadataSchema ?? {},
+            system: parsed.system,
+            active: parsed.active,
+            updatedAt: new Date()
+          }
+        })
+        .returning();
+      return relationshipType;
+    },
+
+    async linkXrmRecords(input: unknown) {
+      const parsed = linkXrmRecordsSchema.parse(input);
+      const relationshipType = await db.query.xrmRelationshipTypes.findFirst({
+        where: eq(xrmRelationshipTypes.key, parsed.relationshipType)
+      });
+      if (!relationshipType) {
+        throw new Error(`xrm_relationship_type_not_found:${parsed.relationshipType}`);
+      }
+
+      const [relationship] = await db
+        .insert(xrmRecordRelationships)
+        .values({
+          relationshipTypeId: relationshipType.id,
+          sourceRecordId: parsed.sourceRecordId,
+          targetRecordId: parsed.targetRecordId,
+          metadata: parsed.metadata ?? {},
+          source: parsed.source,
+          createdByAgentId: parsed.createdByAgentId
+        })
+        .onConflictDoUpdate({
+          target: [
+            xrmRecordRelationships.relationshipTypeId,
+            xrmRecordRelationships.sourceRecordId,
+            xrmRecordRelationships.targetRecordId
+          ],
+          set: {
+            metadata: parsed.metadata ?? {},
+            source: parsed.source,
+            deletedAt: null,
+            updatedAt: new Date()
+          }
+        })
+        .returning();
+      return relationship;
+    },
+
+    async listXrmRelationships(input: unknown = {}) {
+      const parsed = listXrmRelationshipsSchema.parse(input);
+      const relationshipType = parsed.relationshipType
+        ? await db.query.xrmRelationshipTypes.findFirst({ where: eq(xrmRelationshipTypes.key, parsed.relationshipType) })
+        : undefined;
+      if (parsed.relationshipType && !relationshipType) {
+        return [];
+      }
+      const recordCondition =
+        parsed.recordId && parsed.direction === "source"
+          ? eq(xrmRecordRelationships.sourceRecordId, parsed.recordId)
+          : parsed.recordId && parsed.direction === "target"
+            ? eq(xrmRecordRelationships.targetRecordId, parsed.recordId)
+            : parsed.recordId
+              ? or(eq(xrmRecordRelationships.sourceRecordId, parsed.recordId), eq(xrmRecordRelationships.targetRecordId, parsed.recordId))
+              : undefined;
+      const conditions = [
+        relationshipType ? eq(xrmRecordRelationships.relationshipTypeId, relationshipType.id) : undefined,
+        recordCondition,
+        parsed.includeDeleted ? undefined : isNull(xrmRecordRelationships.deletedAt)
+      ].filter((condition): condition is NonNullable<typeof condition> => condition !== undefined);
+
+      return db.query.xrmRecordRelationships.findMany({
+        where: conditions.length > 0 ? and(...conditions) : undefined,
+        with: {
+          relationshipType: true,
+          sourceRecord: { with: { objectType: true } },
+          targetRecord: { with: { objectType: true } }
+        },
+        orderBy: [desc(xrmRecordRelationships.updatedAt)],
+        limit: parsed.limit
+      });
+    },
+
+    async listXrmRecordEvents(input: { recordId: string; limit?: number | undefined }) {
+      return db.query.activities.findMany({
+        where: eq(activities.xrmRecordId, input.recordId),
+        with: { lead: true, person: true, company: true, task: true, assignment: true, xrmRecord: true },
+        orderBy: [desc(activities.occurredAt)],
+        limit: input.limit ?? 100
+      });
     },
 
     async listLeads(input: { query?: string | undefined; limit?: number | undefined } = {}) {
@@ -948,11 +1662,15 @@ export function createCrmServices({ db }: ServiceContext) {
               ? tx.query.assignments.findFirst({ where: eq(assignments.id, existingActivity.assignmentId) })
               : Promise.resolve(null)
           ]);
+          const task = existingActivity.taskId
+            ? await tx.query.tasks.findFirst({ where: eq(tasks.id, existingActivity.taskId) })
+            : undefined;
 
           return {
             idempotent: true,
             lead,
             assignment,
+            task,
             activity: existingActivity
           };
         }
@@ -1006,35 +1724,20 @@ export function createCrmServices({ db }: ServiceContext) {
           throw new Error("Failed to create or update outreach assignment");
         }
 
-        const taskDueAt = assignmentInput.nextActionAt ? new Date(assignmentInput.nextActionAt) : undefined;
-        if (taskDueAt || assignmentStatus === "follow_up_due") {
-          await tx
-            .insert(tasks)
-            .values({
-              title: `Follow up with ${lead.fullName}`,
-              type: "follow_up",
-              status: "open",
-              priority: assignmentPriority,
-              dueAt: taskDueAt ?? occurredAt,
-              ownerAgentId: assignmentInput.ownerAgentId,
-              personId: person.id,
-              companyId: company?.id,
-              leadId: lead.id,
-              assignmentId: assignment.id,
-              idempotencyKey: `assignment:${assignment.id}:follow-up`
-            })
-            .onConflictDoUpdate({
-              target: tasks.idempotencyKey,
-              set: {
-                title: `Follow up with ${lead.fullName}`,
-                priority: assignmentPriority,
-                dueAt: taskDueAt ?? occurredAt,
-                ownerAgentId: assignmentInput.ownerAgentId,
-                status: "open",
-                updatedAt: new Date()
-              }
-            });
-        }
+        const task = await upsertOutreachNextActionTask(tx, {
+          config: parsed.nextActionTask,
+          activityType,
+          lead,
+          personId: person.id,
+          companyId: company?.id,
+          assignmentId: assignment.id,
+          ownerAgentId: assignmentInput.ownerAgentId,
+          priority: assignmentPriority,
+          occurredAt,
+          assignmentNextActionAt: assignment.nextActionAt,
+          profileKey
+        });
+        const metadata = mergeOutreachMetadata(activityInput);
 
         const [activity] = await tx
           .insert(activities)
@@ -1043,6 +1746,7 @@ export function createCrmServices({ db }: ServiceContext) {
             assignmentId: assignment.id,
             personId: person.id,
             companyId: company?.id,
+            taskId: task?.id,
             type: activityType,
             channel: activityChannel,
             direction: activityDirection,
@@ -1053,7 +1757,7 @@ export function createCrmServices({ db }: ServiceContext) {
             externalId,
             externalUrl: activityInput.externalUrl,
             idempotencyKey: activityInput.idempotencyKey ?? externalId,
-            metadata: activityInput.metadata ?? {},
+            metadata,
             occurredAt
           })
           .returning();
@@ -1068,9 +1772,158 @@ export function createCrmServices({ db }: ServiceContext) {
           person,
           company,
           assignment,
+          task,
           activity
         };
       });
+    },
+
+    async backfillLegacyOutreachEvents(input: unknown = {}) {
+      const parsed = backfillLegacyOutreachEventsSchema.parse(input);
+      const conditions = [
+        parsed.activityId ? eq(activities.id, parsed.activityId) : undefined,
+        parsed.leadId ? eq(activities.leadId, parsed.leadId) : undefined,
+        parsed.channel ? eq(activities.channel, parsed.channel) : undefined,
+        or(eq(activities.type, "connection_sent"), eq(activities.type, "connection_request_sent"))
+      ].filter((condition): condition is NonNullable<typeof condition> => condition !== undefined);
+
+      const candidates = await db.query.activities.findMany({
+        where: and(...conditions),
+        with: { lead: true, person: true, company: true, assignment: true, task: true },
+        orderBy: [desc(activities.occurredAt)],
+        limit: parsed.limit
+      });
+
+      const changes: Array<{
+        activityId: string;
+        before: {
+          subject: string | null;
+          body: string | null;
+          metadata: unknown;
+          taskId: string | null;
+        };
+        after: {
+          subject: string;
+          body: string | null;
+          metadata: Record<string, unknown>;
+          taskId?: string | null;
+        };
+      }> = [];
+
+      for (const candidate of candidates) {
+        const parsedBody = parseLegacyOutreachBody(candidate.body, candidate.externalUrl);
+        if (!parsedBody) {
+          continue;
+        }
+
+        const existingMetadata = isRecord(candidate.metadata) ? candidate.metadata : {};
+        if (existingMetadata.noteStatus && existingMetadata.originalBody) {
+          continue;
+        }
+
+        const parsedMetadata = Object.fromEntries(
+          Object.entries(parsedBody).filter(([, value]) => value !== undefined && value !== "")
+        );
+        const metadata = {
+          ...existingMetadata,
+          ...parsedMetadata,
+          normalizedBy: "legacy-outreach-backfill"
+        };
+        const subject = candidate.subject ?? `Connection request sent: ${candidate.lead?.fullName ?? "unknown lead"}`;
+        const body =
+          parsedBody.noteStatus === "confirmed_sent" && !parsed.overwriteConfirmedBody
+            ? candidate.body
+            : parsedBody.noteStatus === "confirmed_sent"
+              ? parsedBody.originalBody
+              : null;
+
+        changes.push({
+          activityId: candidate.id,
+          before: {
+            subject: candidate.subject,
+            body: candidate.body,
+            metadata: candidate.metadata,
+            taskId: candidate.taskId
+          },
+          after: {
+            subject,
+            body,
+            metadata,
+            taskId: candidate.taskId
+          }
+        });
+      }
+
+      if (parsed.dryRun) {
+        return {
+          dryRun: true,
+          matched: candidates.length,
+          changed: changes.length,
+          samples: changes.slice(0, 5)
+        };
+      }
+
+      const applied = await db.transaction(async (tx) => {
+        const appliedChanges = [];
+        for (const change of changes) {
+          const candidate = candidates.find((item) => item.id === change.activityId);
+          if (!candidate) {
+            continue;
+          }
+
+          let linkedTaskId = candidate.taskId;
+          if (parsed.createTasks && !linkedTaskId && candidate.lead) {
+            const existingMetadata = isRecord(change.after.metadata) ? change.after.metadata : {};
+            const profileKey =
+              normalizeUrl(String(existingMetadata.profileUrl ?? "")) ??
+              normalizeUrl(candidate.lead.linkedinUrl ?? undefined) ??
+              normalizeUrl(candidate.lead.salesnavUrl ?? undefined) ??
+              normalizeEmail(candidate.lead.email ?? undefined) ??
+              normalizeName(candidate.lead.fullName) ??
+              candidate.lead.id;
+            const task = await upsertOutreachNextActionTask(tx, {
+              config: undefined,
+              activityType: candidate.type,
+              lead: candidate.lead,
+              personId: candidate.personId,
+              companyId: candidate.companyId,
+              assignmentId: candidate.assignmentId,
+              ownerAgentId: candidate.assignment?.ownerAgentId,
+              priority: candidate.assignment?.priority ?? 0,
+              occurredAt: candidate.occurredAt,
+              assignmentNextActionAt: candidate.assignment?.nextActionAt,
+              profileKey
+            });
+            linkedTaskId = task?.id ?? linkedTaskId;
+          }
+
+          await tx
+            .update(activities)
+            .set({
+              subject: change.after.subject,
+              body: change.after.body,
+              metadata: change.after.metadata,
+              taskId: linkedTaskId ?? undefined
+            })
+            .where(eq(activities.id, change.activityId));
+
+          appliedChanges.push({
+            ...change,
+            after: {
+              ...change.after,
+              taskId: linkedTaskId
+            }
+          });
+        }
+        return appliedChanges;
+      });
+
+      return {
+        dryRun: false,
+        matched: candidates.length,
+        changed: applied.length,
+        samples: applied.slice(0, 5)
+      };
     },
 
     async updateAssignment(id: string, input: unknown) {
@@ -1102,7 +1955,7 @@ export function createCrmServices({ db }: ServiceContext) {
     async getDailyQueue(input: { limit?: number | undefined } = {}) {
       return db.query.tasks.findMany({
         where: and(inArray(tasks.status, ["open", "in_progress"]), lte(tasks.dueAt, new Date())),
-        with: { lead: true, person: true, company: true, assignment: true },
+        with: { lead: true, person: true, company: true, assignment: true, xrmRecord: true },
         orderBy: [desc(tasks.priority), desc(tasks.dueAt)],
         limit: input.limit ?? 25
       });
@@ -1119,7 +1972,7 @@ export function createCrmServices({ db }: ServiceContext) {
     async getOverdueQueue(input: { limit?: number | undefined } = {}) {
       return db.query.tasks.findMany({
         where: and(inArray(tasks.status, ["open", "in_progress"]), lte(tasks.dueAt, new Date(Date.now() - 24 * 60 * 60 * 1000))),
-        with: { lead: true, person: true, company: true, assignment: true },
+        with: { lead: true, person: true, company: true, assignment: true, xrmRecord: true },
         orderBy: [desc(tasks.priority), desc(tasks.dueAt)],
         limit: input.limit ?? 25
       });
@@ -1139,7 +1992,7 @@ export function createCrmServices({ db }: ServiceContext) {
       );
       return db.query.tasks.findMany({
         where: where.length > 0 ? and(...where) : undefined,
-        with: { lead: true, person: true, company: true, assignment: true },
+        with: { lead: true, person: true, company: true, assignment: true, xrmRecord: true },
         orderBy: [desc(tasks.priority), desc(tasks.dueAt)],
         limit: input.limit ?? 100
       });
@@ -1148,14 +2001,14 @@ export function createCrmServices({ db }: ServiceContext) {
     async getTask(id: string) {
       return db.query.tasks.findFirst({
         where: eq(tasks.id, id),
-        with: { lead: true, person: true, company: true, assignment: true, events: true }
+        with: { lead: true, person: true, company: true, assignment: true, xrmRecord: true, events: true }
       });
     },
 
     async listLeadTasks(leadId: string, limit = 100) {
       return db.query.tasks.findMany({
         where: eq(tasks.leadId, leadId),
-        with: { lead: true, person: true, company: true, assignment: true, events: true },
+        with: { lead: true, person: true, company: true, assignment: true, xrmRecord: true, events: true },
         orderBy: [desc(tasks.priority), desc(tasks.dueAt)],
         limit
       });
@@ -1184,6 +2037,7 @@ export function createCrmServices({ db }: ServiceContext) {
               companyId: parsed.companyId,
               leadId: parsed.leadId,
               assignmentId: parsed.assignmentId,
+              xrmRecordId: parsed.xrmRecordId,
               idempotencyKey: parsed.idempotencyKey,
               metadata: parsed.metadata ?? {}
             })
@@ -1218,6 +2072,7 @@ export function createCrmServices({ db }: ServiceContext) {
           companyId: parsed.companyId,
           leadId: parsed.leadId,
           assignmentId: parsed.assignmentId,
+          xrmRecordId: parsed.xrmRecordId,
           idempotencyKey: parsed.idempotencyKey,
           metadata: parsed.metadata,
           updatedAt: new Date()
@@ -1266,6 +2121,7 @@ export function createCrmServices({ db }: ServiceContext) {
         personId?: string | undefined;
         companyId?: string | undefined;
         taskId?: string | undefined;
+        xrmRecordId?: string | undefined;
         channel?: string | undefined;
         query?: string | undefined;
         limit?: number | undefined;
@@ -1286,13 +2142,14 @@ export function createCrmServices({ db }: ServiceContext) {
         input.personId ? eq(activities.personId, input.personId) : undefined,
         input.companyId ? eq(activities.companyId, input.companyId) : undefined,
         input.taskId ? eq(activities.taskId, input.taskId) : undefined,
+        input.xrmRecordId ? eq(activities.xrmRecordId, input.xrmRecordId) : undefined,
         input.channel ? eq(activities.channel, input.channel as typeof activities.$inferSelect.channel) : undefined,
         query
       ].filter((condition): condition is NonNullable<typeof condition> => condition !== undefined);
 
       return db.query.activities.findMany({
         where: conditions.length > 0 ? and(...conditions) : undefined,
-        with: { lead: true, person: true, company: true, task: true, assignment: true },
+        with: { lead: true, person: true, company: true, task: true, assignment: true, xrmRecord: true },
         orderBy: [desc(activities.occurredAt)],
         limit: input.limit ?? 100
       });
@@ -1301,7 +2158,7 @@ export function createCrmServices({ db }: ServiceContext) {
     async getActivity(id: string) {
       return db.query.activities.findFirst({
         where: eq(activities.id, id),
-        with: { lead: true, person: true, company: true, task: true, assignment: true }
+        with: { lead: true, person: true, company: true, task: true, assignment: true, xrmRecord: true }
       });
     },
 
@@ -1310,6 +2167,7 @@ export function createCrmServices({ db }: ServiceContext) {
       personId?: string | undefined;
       companyId?: string | undefined;
       taskId?: string | undefined;
+      xrmRecordId?: string | undefined;
       subject?: string | undefined;
       body: string;
       idempotencyKey?: string | undefined;
@@ -1344,10 +2202,14 @@ export function createCrmServices({ db }: ServiceContext) {
       };
     },
 
-    async listViews(input: { objectType?: string | undefined; limit?: number | undefined } = {}) {
+    async listViews(input: { objectType?: string | undefined; templateKey?: string | undefined; limit?: number | undefined } = {}) {
       const parsedObjectType = input.objectType ? viewObjectTypeSchema.parse(input.objectType) : undefined;
+      const parsedTemplateKey = input.templateKey ? templateKeySchema.parse(input.templateKey) : undefined;
       return db.query.viewDefinitions.findMany({
-        where: parsedObjectType ? eq(viewDefinitions.objectType, parsedObjectType) : undefined,
+        where: and(
+          parsedObjectType ? eq(viewDefinitions.objectType, parsedObjectType) : undefined,
+          parsedTemplateKey ? eq(viewDefinitions.templateKey, parsedTemplateKey) : undefined
+        ),
         with: { createdByAgent: true },
         orderBy: [desc(viewDefinitions.isDefault), desc(viewDefinitions.updatedAt)],
         limit: input.limit ?? 100
@@ -1377,6 +2239,7 @@ export function createCrmServices({ db }: ServiceContext) {
           name: parsed.name,
           description: parsed.description,
           objectType: parsed.objectType,
+          templateKey: parsed.templateKey,
           layout: parsed.layout,
           columns: parsed.columns,
           filters: parsed.filters,
@@ -1401,6 +2264,7 @@ export function createCrmServices({ db }: ServiceContext) {
           name: parsed.name,
           description: parsed.description,
           objectType: parsed.objectType,
+          templateKey: parsed.templateKey,
           layout: parsed.layout,
           columns: parsed.columns,
           filters: parsed.filters,
@@ -1449,6 +2313,7 @@ export function createCrmServices({ db }: ServiceContext) {
           key: view.key,
           name: view.name,
           objectType,
+          templateKey: view.templateKey,
           layout: view.layout,
           columns,
           filters,
@@ -1462,6 +2327,25 @@ export function createCrmServices({ db }: ServiceContext) {
     },
 
     async getViewRows(objectType: ViewObjectType, limit = 500) {
+      const objectTypeRecord = await db.query.xrmObjectTypes.findFirst({ where: eq(xrmObjectTypes.slug, objectType) });
+      if (objectTypeRecord) {
+        const records = await db.query.xrmRecords.findMany({
+          where: and(eq(xrmRecords.objectTypeId, objectTypeRecord.id), isNull(xrmRecords.deletedAt)),
+          with: {
+            objectType: true,
+            tasks: true,
+            activities: true,
+            sourceRelationships: { with: { relationshipType: true, targetRecord: true } },
+            targetRelationships: { with: { relationshipType: true, sourceRecord: true } }
+          },
+          orderBy: [desc(xrmRecords.updatedAt)],
+          limit
+        });
+        if (records.length > 0 || !isLegacyViewObjectType(objectType)) {
+          return records.map(toXrmViewRow);
+        }
+      }
+
       switch (objectType) {
         case "lead":
           return this.listLeads({ limit });
@@ -1473,6 +2357,8 @@ export function createCrmServices({ db }: ServiceContext) {
           return this.listTasks({ limit });
         case "event":
           return this.listActivities({ limit });
+        default:
+          return [];
       }
     },
 
@@ -1499,6 +2385,7 @@ export function createCrmServices({ db }: ServiceContext) {
             personId: links.personId,
             companyId: links.companyId,
             taskId: links.taskId,
+            xrmRecordId: links.xrmRecordId,
             assignmentId: parsed.assignmentId,
             type: parsed.type,
             channel: parsed.channel,
