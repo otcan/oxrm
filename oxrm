@@ -22,7 +22,7 @@ Common commands:
   demo               Seed public-safe demo data
   test               Run DB smoke, health, and CLI smoke
   health             Run instance health check
-  version            Print product version from the selected instance CLI
+  version            Print local product version without requiring an instance
   cli [args]         Run the oXRM CLI inside Docker
   tools              List MCP tools through the Dockerized CLI
   logs [service]     Follow logs
@@ -50,6 +50,21 @@ EOF
 
 run_instance() {
   scripts/crm-instance "$instance" "$@"
+}
+
+print_version() {
+  node - <<'NODE'
+const pkg = require("./package.json");
+
+console.log(JSON.stringify({
+  product: {
+    name: "oXRM",
+    slug: "oxrm",
+    version: pkg.version
+  },
+  note: "This command reads local package metadata and does not require an initialized instance."
+}, null, 2));
+NODE
 }
 
 ensure_instance_env() {
@@ -129,7 +144,7 @@ case "$command" in
     run_instance health
     ;;
   version)
-    run_instance cli version
+    print_version
     ;;
   migrate)
     run_instance migrate
