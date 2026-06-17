@@ -256,6 +256,26 @@ direct_verify() {
     scripts/crm backup verify-source
 }
 
+compose_backup() {
+  local backup_workspace
+  backup_workspace="$(backup_workspace_host_path)"
+  mkdir -p "$backup_workspace"
+  compose run --rm \
+    -v "${backup_workspace}:/backup-workspace" \
+    -e BACKUP_WORKSPACE=/backup-workspace \
+    backup scripts/crm backup dev
+}
+
+compose_verify() {
+  local backup_workspace
+  backup_workspace="$(backup_workspace_host_path)"
+  mkdir -p "$backup_workspace"
+  compose run --rm \
+    -v "${backup_workspace}:/backup-workspace" \
+    -e BACKUP_WORKSPACE=/backup-workspace \
+    backup scripts/crm backup verify-source
+}
+
 compose_run_node() {
   compose run --rm --no-deps api "$@"
 }
@@ -366,9 +386,8 @@ compose_upgrade() {
   compose up -d postgres redis
 
   if [[ "$upgrade_skip_backup" == false ]]; then
-    compose up -d backup
-    compose exec -T backup scripts/crm backup dev
-    compose exec -T backup scripts/crm backup verify-source
+    compose_backup
+    compose_verify
   else
     echo "Skipping backup for $instance. Do not use --skip-backup for production upgrades." >&2
   fi
@@ -537,14 +556,14 @@ case "$command" in
     ;;
   backup)
     if has_compose; then
-      compose exec -T backup scripts/crm backup dev
+      compose_backup
     else
       direct_backup
     fi
     ;;
   verify)
     if has_compose; then
-      compose exec -T backup scripts/crm backup verify-source
+      compose_verify
     else
       direct_verify
     fi

@@ -84,7 +84,7 @@ Each release note should include:
 
 - `./oxrm upgrade` runs backup and verify before migrations by default.
 - Local disposable upgrades can use `--skip-backup`, but production-bound instances must not.
-- Backup verification currently checks artifact presence; full isolated `pg_restore` replay remains a production/CI hardening item.
+- Backup verification restores the latest dump into an isolated disposable database and checks schema readability.
 
 ### Security And Privacy Impact
 

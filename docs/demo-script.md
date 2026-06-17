@@ -60,4 +60,3 @@ End by saying that oXRM is the relationship ledger; LinkedIn mechanics live in
 - Real emails, message bodies, phone numbers, or customer names.
 - Backup repositories, tokens, `.env`, `instances/*.local.env`, dumps, logs, or
   private hostnames.
-- Claims that backup verification performs isolated restore replay today.

@@ -741,8 +741,10 @@ Hard enforcement:
 - Health check is degraded if the latest successful backup is older than 26 hours.
 - Startup should fail in production if backup configuration is missing.
 - A manual `backup:run` command must exist.
-- A latest-backup artifact verification command must exist.
-- Full isolated `pg_restore` replay remains planned hardening.
+- A latest-backup verification command must restore the dump into an isolated
+  disposable database with `pg_restore`.
+- Verification must check restored schema readability before dropping the
+  disposable database.
 
 Backup manifest:
 

@@ -21,7 +21,7 @@ oXRM stores relationship, outreach, task, and timeline state. Treat all producti
 
 - Bind development services to `127.0.0.1` unless an authenticated reverse proxy is configured.
 - Store connector credentials outside the database when possible and keep only `credentialsRef` in CRM records.
-- Run latest-backup artifact verification before relying on a new instance.
+- Run latest-backup restore verification before relying on a new instance.
 - Rotate tokens after any accidental log, screenshot, or issue exposure.
 
 ## Public Release Scan

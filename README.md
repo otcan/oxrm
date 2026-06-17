@@ -104,12 +104,12 @@ custom/manual setups and is not the first-run path.
 `./ocrm` is a deprecated compatibility wrapper around `./oxrm`. New automation should call `./oxrm`.
 
 Use `./oxrm -i <instance> upgrade` for repeatable instance updates. It runs the
-configured backup path, verifies that the latest backup artifact is present and
-readable, stops app writers, builds the image, runs migrations once, runs
-idempotent seed, restarts services, and smoke-tests the instance. Full isolated
-`pg_restore` replay is still planned hardening. For disposable local instances
-without backup credentials, pass `--skip-backup`; do not skip backups for
-production-bound instances.
+configured backup path, restores the latest backup artifact into an isolated
+disposable PostgreSQL database with `pg_restore`, checks restored schema
+readability, stops app writers, builds the image, runs migrations once, runs
+idempotent seed, restarts services, and smoke-tests the instance. For disposable
+local instances without backup credentials, pass `--skip-backup`; do not skip
+backups for production-bound instances.
 
 Print the URLs assigned to the Docker instance:
 
@@ -327,8 +327,9 @@ Production must configure `BACKUP_GITHUB_REPO` and `BACKUP_GITHUB_TOKEN`.
 ```
 
 The backup worker is part of the scaffold because backup enforcement is a product requirement, not an operational afterthought.
-Current verification checks the latest backup metadata/artifact path. Full
-isolated restore replay remains a hardening item and is tracked as future work.
+Current verification restores the latest dump into a disposable database, checks
+that public tables and `backup_runs` are readable, and drops the database before
+returning.
 
 ## Agent Branch Workflow
 
