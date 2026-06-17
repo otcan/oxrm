@@ -5,15 +5,19 @@
     {$ORKESTR_ADMIN_USER} {$ORKESTR_ADMIN_PASSWORD_HASH}
   }
 
-  handle_path /api/* {
-    reverse_proxy api:3000
+  handle /api/* {
+    reverse_proxy api:18181
   }
 
-  handle_path /mcp* {
-    reverse_proxy mcp:3010
+  handle /mcp {
+    reverse_proxy mcp:18182
+  }
+
+  handle /mcp/* {
+    reverse_proxy mcp:18182
   }
 
   handle {
-    reverse_proxy web:4200
+    reverse_proxy web:18180
   }
 }

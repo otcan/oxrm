@@ -14,6 +14,7 @@ Common commands:
   setup              Create the local env file for the instance
   start              Start Docker containers
   stop               Stop Docker containers
+  reset              Stop containers and delete local Docker data for the instance
   restart            Restart Docker containers
   status             Show containers
   urls               Print local URLs
@@ -117,6 +118,9 @@ case "$command" in
     ;;
   stop|down)
     run_instance down
+    ;;
+  reset)
+    run_instance reset
     ;;
   restart)
     run_instance down

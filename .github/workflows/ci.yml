@@ -3,11 +3,12 @@ name: CI
 on:
   push:
     branches:
+      - main
       - master
   pull_request:
 
 jobs:
-  checks:
+  static:
     runs-on: ubuntu-latest
 
     steps:
@@ -32,6 +33,10 @@ jobs:
       - name: Build
         run: pnpm build
 
+      - name: Check built package exports
+        run: |
+          pnpm --filter @orkestr-crm/api exec node --input-type=module -e "await import('@orkestr-crm/shared'); await import('@orkestr-crm/db'); await import('@orkestr-crm/core');"
+
       - name: Check migration generation
         run: |
           pnpm db:generate
@@ -39,3 +44,64 @@ jobs:
 
       - name: Validate Compose
         run: docker compose -f docker-compose.yml -f infra/compose/docker-compose.prod.yml config
+
+  docker-demo:
+    needs: static
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22.22.3"
+          package-manager-cache: false
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Prepare demo env
+        run: cp instances/demo.env.example instances/demo.local.env
+
+      - name: Start and seed demo stack
+        run: |
+          ./oxrm start
+          ./oxrm ready
+          ./oxrm demo
+          ./oxrm test
+          ./oxrm urls
+
+      - name: HTTP smoke
+        run: |
+          curl -fsS http://127.0.0.1:18291/api/health
+          curl -fsS http://127.0.0.1:18291/api/views
+          curl -fsSI http://127.0.0.1:18290/
+
+      - name: MCP smoke
+        run: |
+          ./oxrm cli health
+          ./oxrm tools
+          ./oxrm cli mcp:read crm://queue/today
+
+      - name: Stop demo stack
+        if: always()
+        run: ./oxrm stop || true
+
+  proxy-smoke:
+    needs: static
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Validate Caddy config
+        run: |
+          docker run --rm \
+            -v "$PWD/infra/proxy/Caddyfile:/etc/caddy/Caddyfile:ro" \
+            caddy:2 sh -lc 'HASH="$(caddy hash-password --plaintext ci-password)" && ORKESTR_HOST=:8080 ORKESTR_ADMIN_USER=ci ORKESTR_ADMIN_PASSWORD_HASH="$HASH" caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile'

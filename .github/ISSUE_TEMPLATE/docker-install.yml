@@ -1,0 +1,34 @@
+name: Docker install issue
+description: Report a problem with the Docker-first quickstart.
+title: "[Install]: "
+labels: ["bug", "docker"]
+body:
+  - type: textarea
+    id: command
+    attributes:
+      label: Command that failed
+      description: Paste the exact command and sanitized output.
+      placeholder: ./oxrm start
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Quick checks
+      options:
+        - label: Docker Engine is running.
+        - label: I ran `./oxrm urls`.
+        - label: I ran `./oxrm status`.
+        - label: I checked `docs/troubleshooting.md`.
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, CPU architecture, Docker version, Compose version if installed, and oXRM commit.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Sanitized logs
+      description: Output from `./oxrm logs <service>` if relevant. Do not include private data.

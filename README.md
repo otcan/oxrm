@@ -1,10 +1,33 @@
 # oXRM
 
-oXRM is the product shorthand for Orkestr XRM. The repository still has internal package scopes that use the older Orkestr CRM name, but operator-facing commands and docs now use `oxrm`.
+oXRM is an MCP-first relationship workspace for people who use agents to manage
+follow-ups, outreach, job search, partnerships, investors, and warm leads.
 
-Today, oXRM is an MCP-first relationship system with a shipped outreach preset and a job-search proof preset. It gives AI agents, connector workers, and operators one auditable place to record generic records, relationships, timelines, tasks, saved views, follow-up state, scheduling context, and backup status.
+It gives AI agents, connector workers, and operators one auditable place to
+record generic records, relationships, timelines, tasks, saved views, follow-up
+state, scheduling context, and backup status.
 
-The project is deliberately not an outreach automation bot. The core product contract is the relationship ledger: important external or operator actions can be written once, deduplicated by an idempotency key where applicable, linked to generic records, and then read back through HTTP APIs, MCP tools, MCP resources, and saved views.
+The project is deliberately not an outreach automation bot. It stores
+relationship state, queues next actions, exposes MCP tools/resources, and keeps
+humans in control. The core product contract is the relationship ledger:
+important external or operator actions can be written once, deduplicated by an
+idempotency key where applicable, linked to generic records, and then read back
+through HTTP APIs, MCP tools, MCP resources, and saved views.
+
+The repository still has internal package scopes that use the older Orkestr CRM
+name, but operator-facing commands and docs now use `oxrm`.
+
+## How Orkestr And oXRM Fit Together
+
+Orkestr is the local-first workstation for persistent coding and operations
+agents.
+
+oXRM is the first workflow app built for that model: an MCP-first relationship
+workspace that gives agents structured relationship memory, follow-up queues,
+and safe human-approved actions.
+
+Use Orkestr when you need to run and supervise agents. Use oXRM when those
+agents need relationship state.
 
 ## What It Does
 
@@ -37,14 +60,28 @@ Requirements:
 - Docker Compose plugin, optional. If Compose is unavailable, `./oxrm` falls back to direct Docker containers.
 
 ```bash
+git clone https://github.com/otcan/orkestr-crm.git
+cd orkestr-crm
 ./oxrm start
 ./oxrm ready
 ./oxrm demo
 ./oxrm test
-./oxrm upgrade
+./oxrm urls
 ```
 
 `./oxrm` builds the app image, starts Postgres, Redis, API, MCP, web, worker, and scheduler containers, runs migrations, seeds baseline data, loads a public-safe demo, then runs smoke checks.
+
+Expected default demo URLs:
+
+```text
+Web: http://127.0.0.1:18290
+API: http://127.0.0.1:18291
+MCP: http://127.0.0.1:18292/mcp
+```
+
+The default public demo uses `instances/demo.env.example`. Use `./oxrm urls`
+for the authoritative runtime ports. The root `.env.example` is for
+custom/manual setups and is not the first-run path.
 
 `./ocrm` is a deprecated compatibility wrapper around `./oxrm`. New automation should call `./oxrm`.
 
@@ -86,9 +123,14 @@ Each instance runs its CLI inside that instance's Docker network:
 ./oxrm -i client-a cli event:list --limit 20
 ```
 
-## Public-Safe Demo
+## Demo Data
 
-The demo path uses only synthetic records and `.invalid` URLs.
+The demo path uses only synthetic records and `.invalid` URLs. No real personal
+data is included, and no real LinkedIn, email, Sales Navigator, or calendar
+credentials are required.
+
+Do not commit real leads, tokens, cookies, browser sessions, message exports,
+logs, dumps, private instance files, or backups.
 
 ```bash
 ./oxrm start
@@ -104,6 +146,12 @@ Use `./oxrm urls` to print the Docker instance URLs. Keep `instances/*.local.env
 - `outreach`: people, companies, leads, tasks, events, and outreach saved views.
 - `job_search`: companies, contacts, jobs, applications, interviews, referrals, documents, saved views, synthetic records, an application timeline event, and a follow-up task.
 
+## What oXRM Is Not
+
+oXRM is not a LinkedIn scraper, spam tool, mass outreach bot,
+Salesforce/HubSpot clone, production-ready multi-tenant SaaS, or replacement
+for human approval.
+
 ## CLI And MCP Testing
 
 Use the Dockerized CLI:
@@ -117,6 +165,12 @@ Use the Dockerized CLI:
 ```
 
 Host-side CLI development is contributor-only. For normal use, run `./oxrm cli ...` so the CLI resolves API and MCP services inside the Docker network.
+
+More detail:
+
+- [MCP tools and resources](docs/mcp.md)
+- [HTTP API endpoints](docs/api.md)
+- [Troubleshooting](docs/troubleshooting.md)
 
 ## Data Model
 

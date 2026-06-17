@@ -10,6 +10,7 @@ Commands:
   config        Render docker compose config when Compose is available
   up            Start the instance
   down          Stop the instance
+  reset         Stop containers and delete local Docker data for the instance
   ps            Show containers
   logs [svc]    Follow logs
   cli [args]    Run the oXRM CLI inside the instance network
@@ -184,6 +185,12 @@ direct_down() {
   for service in scheduler worker web mcp api redis postgres; do
     remove_container "$service"
   done
+}
+
+direct_reset() {
+  direct_down
+  docker volume rm "${project}-postgres-data" >/dev/null 2>&1 || true
+  docker network rm "$project" >/dev/null 2>&1 || true
 }
 
 direct_exec_node() {
@@ -438,6 +445,14 @@ case "$command" in
       compose down
     else
       direct_down
+    fi
+    ;;
+  reset)
+    if has_compose; then
+      compose down -v --remove-orphans
+      direct_reset
+    else
+      direct_reset
     fi
     ;;
   ps)

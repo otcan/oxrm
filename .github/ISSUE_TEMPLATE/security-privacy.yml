@@ -1,0 +1,24 @@
+name: Security or privacy concern
+description: Request a private channel or report a public-safe security/privacy concern.
+title: "[Security]: "
+labels: ["security"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include exploit details, tokens, cookies, real leads, real emails,
+        private hostnames, dumps, backups, or browser session data in this public issue.
+  - type: textarea
+    id: concern
+    attributes:
+      label: Public-safe summary
+      description: Describe the affected area without secrets or exploit details.
+    validations:
+      required: true
+  - type: textarea
+    id: contact
+    attributes:
+      label: Preferred private contact path
+      description: How should maintainers contact you privately?
+    validations:
+      required: true

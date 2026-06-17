@@ -1,0 +1,33 @@
+name: MCP issue
+description: Report a problem with MCP tools or resources.
+title: "[MCP]: "
+labels: ["bug", "mcp"]
+body:
+  - type: textarea
+    id: command
+    attributes:
+      label: MCP command
+      description: Paste the exact `./oxrm cli mcp:*` or `./oxrm tools` command.
+      placeholder: ./oxrm cli mcp:read crm://queue/today
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result
+      description: Include sanitized output only.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Docker version, oXRM commit, and whether this is the demo instance.
+    validations:
+      required: true
