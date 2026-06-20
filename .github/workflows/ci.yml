@@ -204,8 +204,34 @@ jobs:
           export OXRM_DEPLOY_GITHUB_RUN_ID='${GITHUB_RUN_ID}'
           export OXRM_DEPLOY_GITHUB_RUN_NUMBER='${GITHUB_RUN_NUMBER}'
           export OXRM_DEPLOYED_AT='${deployed_at}'
-          scripts/deploy-live-demo job-search-demo job-search-demo.oxrm.orkestr.de job_search 18510 18511 18512 18513 18514
-          scripts/deploy-live-demo linkedin-outreach-demo linkedin-outreach-demo.oxrm.orkestr.de outreach 18520 18521 18522 18523 18524
+          scripts/deploy-live-demo job-search-demo job-search-demo.oxrm.orkestr.de job_search 18510 18511 18512 18513 18514 </dev/null
+          scripts/deploy-live-demo linkedin-outreach-demo linkedin-outreach-demo.oxrm.orkestr.de outreach 18520 18521 18522 18523 18524 </dev/null
+          node <<'NODE'
+          const fs = require("node:fs");
+
+          const expectedVersion = process.env.OXRM_DEPLOY_VERSION;
+          const manifests = [
+            [".deployments/job-search-demo.json", "job-search-demo", "job-search"],
+            [".deployments/linkedin-outreach-demo.json", "linkedin-outreach-demo", "linkedin-outreach"]
+          ];
+
+          const failures = [];
+          for (const [path, instance, scenario] of manifests) {
+            if (!fs.existsSync(path)) {
+              failures.push({ path, error: "missing_manifest" });
+              continue;
+            }
+            const manifest = JSON.parse(fs.readFileSync(path, "utf8"));
+            if (manifest.instance !== instance) failures.push({ path, error: "instance_mismatch", actual: manifest.instance });
+            if (manifest.demoScenario !== scenario) failures.push({ path, error: "scenario_mismatch", actual: manifest.demoScenario });
+            if (manifest.deployVersion !== expectedVersion) failures.push({ path, error: "version_mismatch", actual: manifest.deployVersion, expected: expectedVersion });
+          }
+
+          if (failures.length > 0) {
+            console.error(JSON.stringify({ error: "live_demo_manifest_check_failed", failures }, null, 2));
+            process.exit(1);
+          }
+          NODE
           OXRM_DEMO_ADMIN_USER='${OXRM_DEMO_ADMIN_USER}' \
           OXRM_DEMO_ADMIN_PASSWORD_HASH='${OXRM_DEMO_ADMIN_PASSWORD_HASH}' \
           JOB_SEARCH_DEMO_API_PORT=18511 \
