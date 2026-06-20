@@ -236,72 +236,182 @@ async function seedLinkedinOutreachDemo() {
 
     const demoLeads = [
       {
-        fullName: "Ayla Demir",
-        company: "VectorForge AI",
-        companyDomain: "vectorforge.example",
+        fullName: "Sarah Kaya",
+        company: "HelioWorks",
+        companyDomain: "helioworks.example",
         title: "Founder",
-        linkedinUrl: "https://www.linkedin.com/in/ayla-demir-demo",
+        linkedinUrl: "https://www.linkedin.com/in/sarah-kaya-demo",
         location: "Berlin, Germany",
-        status: "connection_sent",
+        status: "new",
+        stage: "New",
         segment: "technical founder",
-        assignmentStatus: "connection_sent" as const,
-        priority: 2,
-        nextActionAt: "2026-06-20T09:00:00.000Z",
-        activityType: "connection_sent" as const,
-        activitySubject: "Connection request sent to Ayla Demir",
-        activityBody: "Sent a short connection request mentioning local-first outreach workflows.",
-        nextAction: "Check if the connection request was accepted, then draft a concise follow-up."
-      },
-      {
-        fullName: "Marco Stein",
-        company: "OpsPilot",
-        companyDomain: "opspilot.example",
-        title: "Head of Growth",
-        linkedinUrl: "https://www.linkedin.com/in/marco-stein-demo",
-        location: "Hamburg, Germany",
-        status: "waiting_for_reply",
-        segment: "growth leader",
-        assignmentStatus: "follow_up_due" as const,
-        priority: 3,
+        channel: "linkedin",
+        assignmentStatus: "new" as const,
+        priority: 4,
         nextActionAt: "2026-06-20T08:30:00.000Z",
-        activityType: "message_sent" as const,
-        activitySubject: "Sent demo context to Marco Stein",
-        activityBody: "Shared synthetic demo summary and asked whether a 15-minute walkthrough would be useful.",
-        nextAction: "Draft follow-up with one screenshot idea and ask if next week works."
+        nextAction: "Review the source note, check fit, and prepare a short first-message draft.",
+        draftStatus: "proposed",
+        draftSubject: "Possible fit for local-first outreach",
+        draftBody: "Hi Sarah, noticed HelioWorks is hiring operators around founder-led growth. I am testing a local-first outreach workspace that keeps context, drafts, and follow-ups auditable. Worth comparing notes?",
+        warmIntro: false,
+        activities: [
+          {
+            type: "manual_note" as const,
+            channel: "manual" as const,
+            direction: "internal" as const,
+            subject: "Lead saved from target founder list",
+            body: "Synthetic lead imported from a target-account list. Needs fit review before any external action.",
+            occurredAt: "2026-06-19T08:10:00.000Z"
+          }
+        ]
       },
       {
-        fullName: "Nora Yilmaz",
+        fullName: "Daniel Brooks",
+        company: "HelioWorks",
+        companyDomain: "helioworks.example",
+        title: "Head of Product",
+        linkedinUrl: "https://www.linkedin.com/in/daniel-brooks-demo",
+        location: "Berlin, Germany",
+        status: "needs_research",
+        stage: "Preparing",
+        segment: "product leader",
+        channel: "linkedin",
+        assignmentStatus: "queued" as const,
+        priority: 3,
+        nextActionAt: "2026-06-20T10:00:00.000Z",
+        nextAction: "Summarize product-led outreach context and decide whether Sarah or Daniel is the better entry point.",
+        warmIntro: true,
+        activities: [
+          {
+            type: "manual_note" as const,
+            channel: "manual" as const,
+            direction: "internal" as const,
+            subject: "Warm intro path identified",
+            body: "A mutual operator can introduce Daniel if the account looks relevant.",
+            occurredAt: "2026-06-19T09:15:00.000Z"
+          }
+        ]
+      },
+      {
+        fullName: "Maya Iversen",
+        company: "Northwind Ops",
+        companyDomain: "northwindops.example",
+        title: "Operations Lead",
+        linkedinUrl: "https://www.linkedin.com/in/maya-iversen-demo",
+        location: "Copenhagen, Denmark",
+        status: "needs_context_summary",
+        stage: "Preparing",
+        segment: "operations lead",
+        channel: "email",
+        assignmentStatus: "queued" as const,
+        priority: 2,
+        nextActionAt: "2026-06-20T12:00:00.000Z",
+        nextAction: "Check the imported company context and draft an email only if the account matches the outreach thesis.",
+        warmIntro: false,
+        activities: [
+          {
+            type: "manual_note" as const,
+            channel: "manual" as const,
+            direction: "internal" as const,
+            subject: "CSV lead import reviewed",
+            body: "Imported from a synthetic CSV source with company, role, and domain fields.",
+            occurredAt: "2026-06-19T10:30:00.000Z"
+          }
+        ]
+      },
+      {
+        fullName: "Alex Morgan",
+        company: "Northwind Ops",
+        companyDomain: "northwindops.example",
+        title: "Founder",
+        linkedinUrl: "https://www.linkedin.com/in/alex-morgan-demo",
+        location: "Copenhagen, Denmark",
+        status: "waiting_for_reply",
+        stage: "Contacted",
+        segment: "founder",
+        channel: "linkedin",
+        assignmentStatus: "messaged" as const,
+        priority: 3,
+        nextActionAt: "2026-06-20T15:00:00.000Z",
+        nextAction: "Draft one follow-up that references the prior note and asks whether ops follow-up tracking is a current problem.",
+        draftStatus: "proposed",
+        draftSubject: "Follow-up on outreach tracking",
+        draftBody: "Hi Alex, quick follow-up on the local-first outreach tracker idea. The useful part is keeping next actions, drafts, and history in one place before anything gets sent. Is this a pain for your team right now?",
+        warmIntro: false,
+        lastContactAt: "2026-06-19T12:35:00.000Z",
+        activities: [
+          {
+            type: "connection_sent" as const,
+            channel: "linkedin" as const,
+            direction: "outbound" as const,
+            subject: "Connection request sent to Alex Morgan",
+            body: "Short request mentioning operational follow-up tracking.",
+            occurredAt: "2026-06-18T13:00:00.000Z"
+          },
+          {
+            type: "message_sent" as const,
+            channel: "linkedin" as const,
+            direction: "outbound" as const,
+            subject: "Initial message sent to Alex Morgan",
+            body: "Shared a concise note about local-first outreach memory and asked if it matched current workflow gaps.",
+            occurredAt: "2026-06-19T12:35:00.000Z"
+          }
+        ]
+      },
+      {
+        fullName: "Priya Shah",
         company: "LedgerLoop",
         companyDomain: "ledgerloop.example",
         title: "CEO",
-        linkedinUrl: "https://www.linkedin.com/in/nora-yilmaz-demo",
+        linkedinUrl: "https://www.linkedin.com/in/priya-shah-demo",
         location: "Munich, Germany",
-        status: "needs_context_summary",
+        status: "waiting_for_reply",
+        stage: "Contacted",
         segment: "warm founder lead",
-        assignmentStatus: "queued" as const,
-        priority: 4,
-        nextActionAt: "2026-06-20T10:30:00.000Z",
-        activityType: "manual_note" as const,
-        activitySubject: "Warm intro received for Nora Yilmaz",
-        activityBody: "Mutual operator suggested Nora as a fit for the self-hosted outreach workflow.",
-        nextAction: "Summarize context and draft a first message referencing the mutual intro."
+        channel: "email",
+        assignmentStatus: "messaged" as const,
+        priority: 2,
+        nextAction: "Wait for reply before drafting another note.",
+        warmIntro: true,
+        lastContactAt: "2026-06-19T14:20:00.000Z",
+        activities: [
+          {
+            type: "email_sent" as const,
+            channel: "email" as const,
+            direction: "outbound" as const,
+            subject: "Intro email sent to Priya Shah",
+            body: "Synthetic intro email sent after warm context was confirmed.",
+            occurredAt: "2026-06-19T14:20:00.000Z"
+          }
+        ]
       },
       {
-        fullName: "Sam Keller",
-        company: "Northstar Labs",
-        companyDomain: "northstar.example",
-        title: "Talent Partner",
-        linkedinUrl: "https://www.linkedin.com/in/sam-keller-demo",
+        fullName: "Omar Haddad",
+        company: "TalentBridge",
+        companyDomain: "talentbridge.example",
+        title: "Partner",
+        linkedinUrl: "https://www.linkedin.com/in/omar-haddad-demo",
         location: "Remote EU",
-        status: "needs_research",
-        segment: "recruiter",
-        assignmentStatus: "queued" as const,
-        priority: 1,
-        nextActionAt: "2026-06-21T09:00:00.000Z",
-        activityType: "manual_note" as const,
-        activitySubject: "Recruiter lead saved from LinkedIn search",
-        activityBody: "Saved as a possible recruiter contact. Do not send until role fit is checked.",
-        nextAction: "Inspect related job application and draft only after confirming role fit."
+        status: "replied",
+        stage: "Engaged",
+        segment: "partner lead",
+        channel: "linkedin",
+        assignmentStatus: "replied" as const,
+        priority: 3,
+        nextAction: "Summarize the reply and propose a meeting prep note.",
+        warmIntro: false,
+        replySummary: "Interested in seeing how follow-ups and approved drafts stay auditable.",
+        lastContactAt: "2026-06-20T07:40:00.000Z",
+        activities: [
+          {
+            type: "message_received" as const,
+            channel: "linkedin" as const,
+            direction: "inbound" as const,
+            subject: "Reply received from Omar Haddad",
+            body: "Omar asked for a short walkthrough of draft-only outreach tracking and activity history.",
+            occurredAt: "2026-06-20T07:40:00.000Z"
+          }
+        ]
       }
     ];
 
@@ -352,7 +462,7 @@ async function seedLinkedinOutreachDemo() {
         location: item.location,
         companyId: company.id,
         source,
-        customFields: { segment: item.segment, status: item.status, nextAction: item.nextAction }
+        customFields: { segment: item.segment, status: item.status, stage: item.stage, nextAction: item.nextAction, lastContactAt: item.lastContactAt }
       };
       if (person) {
         [person] = await db.update(people).set({ ...personValues, updatedAt: new Date() }).where(eq(people.id, person.id)).returning();
@@ -383,8 +493,17 @@ async function seedLinkedinOutreachDemo() {
       let lead = normalizedLinkedinUrl ? await db.query.leads.findFirst({ where: eq(leads.linkedinUrl, normalizedLinkedinUrl) }) : undefined;
       const leadFields = {
         status: item.status,
+        stage: item.stage,
         segment: item.segment,
-        nextAction: item.nextAction
+        channel: item.channel,
+        nextAction: item.nextAction,
+        nextActionAt: item.nextActionAt,
+        lastContactAt: item.lastContactAt,
+        draftStatus: item.draftStatus,
+        draftSubject: item.draftSubject,
+        draftBody: item.draftBody,
+        warmIntro: item.warmIntro,
+        replySummary: item.replySummary
       };
       const leadValues = {
         personId: person.id,
@@ -427,17 +546,29 @@ async function seedLinkedinOutreachDemo() {
         title: item.title,
         linkedinUrl: item.linkedinUrl,
         company: company.name,
-        segment: item.segment
+        segment: item.segment,
+        stage: item.stage,
+        lastContactAt: item.lastContactAt
       }, "person", person.id);
       const leadRecord = await upsertRecord(leadObjectType.id, `linkedin-outreach:lead:${normalizedLinkedinUrl ?? lead.id}`, lead.fullName, {
         fullName: lead.fullName,
         company: company.name,
         title: item.title,
         status: item.status,
+        stage: item.stage,
         source,
+        channel: item.channel,
         linkedinUrl: item.linkedinUrl,
         nextAction: item.nextAction,
-        segment: item.segment
+        nextActionAt: item.nextActionAt,
+        lastContactAt: item.lastContactAt,
+        draftStatus: item.draftStatus,
+        draftSubject: item.draftSubject,
+        draftBody: item.draftBody,
+        warmIntro: item.warmIntro,
+        replySummary: item.replySummary,
+        segment: item.segment,
+        notes: `${item.segment}. Synthetic demo record. Not a real person.`
       }, "lead", lead.id);
 
       await linkRecord("works_at", personRecord.id, companyRecord.id);
@@ -450,8 +581,8 @@ async function seedLinkedinOutreachDemo() {
         flowId: flow.id,
         status: item.assignmentStatus,
         priority: item.priority,
-        lastContactedAt: new Date("2026-06-19T12:00:00.000Z"),
-        nextActionAt: new Date(item.nextActionAt)
+        lastContactedAt: item.lastContactAt ? new Date(item.lastContactAt) : undefined,
+        nextActionAt: item.nextActionAt ? new Date(item.nextActionAt) : undefined
       };
       if (assignment) {
         [assignment] = await db.update(assignments).set({ ...assignmentValues, updatedAt: new Date() }).where(eq(assignments.id, assignment.id)).returning();
@@ -459,65 +590,71 @@ async function seedLinkedinOutreachDemo() {
         [assignment] = await db.insert(assignments).values(assignmentValues).returning();
       }
 
-      const taskKey = `linkedin-outreach:task:${normalizedLinkedinUrl ?? lead.id}`;
-      await db
-        .insert(tasks)
-        .values({
-          title: `Next action: ${item.fullName}`,
-          description: item.nextAction,
-          type: item.assignmentStatus === "queued" ? "research" : "follow_up",
-          status: "open",
-          priority: item.priority,
-          dueAt: new Date(item.nextActionAt),
-          leadId: lead.id,
-          personId: person.id,
-          companyId: company.id,
-          assignmentId: assignment?.id,
-          xrmRecordId: leadRecord.id,
-          idempotencyKey: taskKey,
-          metadata: { source, scenario: scenario }
-        })
-        .onConflictDoUpdate({
-          target: tasks.idempotencyKey,
-          set: {
+      if (item.nextActionAt) {
+        const taskKey = `linkedin-outreach:task:${normalizedLinkedinUrl ?? lead.id}`;
+        await db
+          .insert(tasks)
+          .values({
             title: `Next action: ${item.fullName}`,
             description: item.nextAction,
+            type: item.assignmentStatus === "queued" || item.assignmentStatus === "new" ? "research" : "follow_up",
+            status: "open",
             priority: item.priority,
             dueAt: new Date(item.nextActionAt),
+            leadId: lead.id,
+            personId: person.id,
+            companyId: company.id,
+            assignmentId: assignment?.id,
             xrmRecordId: leadRecord.id,
-            updatedAt: new Date()
-          }
-        });
+            idempotencyKey: taskKey,
+            metadata: { source, scenario, templateKey: "outreach", draftOnly: true }
+          })
+          .onConflictDoUpdate({
+            target: tasks.idempotencyKey,
+            set: {
+              title: `Next action: ${item.fullName}`,
+              description: item.nextAction,
+              priority: item.priority,
+              dueAt: new Date(item.nextActionAt),
+              xrmRecordId: leadRecord.id,
+              metadata: { source, scenario, templateKey: "outreach", draftOnly: true },
+              updatedAt: new Date()
+            }
+          });
+      }
 
-      const activityKey = `linkedin-outreach:event:${normalizedLinkedinUrl ?? lead.id}`;
-      await db
-        .insert(activities)
-        .values({
-          leadId: lead.id,
-          personId: person.id,
-          companyId: company.id,
-          assignmentId: assignment?.id,
-          xrmRecordId: leadRecord.id,
-          type: item.activityType,
-          channel: item.activityType === "manual_note" ? "manual" : "linkedin",
-          direction: item.activityType === "manual_note" ? "internal" : "outbound",
-          subject: item.activitySubject,
-          body: item.activityBody,
-          externalUrl: item.linkedinUrl,
-          externalId: activityKey,
-          idempotencyKey: activityKey,
-          occurredAt: new Date("2026-06-19T12:00:00.000Z"),
-          metadata: { source, scenario, nextAction: item.nextAction, approvalRequired: true }
-        })
-        .onConflictDoUpdate({
-          target: activities.idempotencyKey,
-          set: {
-            subject: item.activitySubject,
-            body: item.activityBody,
+      for (const [index, activity] of item.activities.entries()) {
+        const activityKey = `linkedin-outreach:event:${normalizedLinkedinUrl ?? lead.id}:${index + 1}`;
+        await db
+          .insert(activities)
+          .values({
+            leadId: lead.id,
+            personId: person.id,
+            companyId: company.id,
+            assignmentId: assignment?.id,
             xrmRecordId: leadRecord.id,
-            metadata: { source, scenario, nextAction: item.nextAction, approvalRequired: true }
-          }
-        });
+            type: activity.type,
+            channel: activity.channel,
+            direction: activity.direction,
+            subject: activity.subject,
+            body: activity.body,
+            externalUrl: item.linkedinUrl,
+            externalId: activityKey,
+            idempotencyKey: activityKey,
+            occurredAt: new Date(activity.occurredAt),
+            metadata: { source, scenario, templateKey: "outreach", nextAction: item.nextAction, approvalRequired: true }
+          })
+          .onConflictDoUpdate({
+            target: activities.idempotencyKey,
+            set: {
+              subject: activity.subject,
+              body: activity.body,
+              xrmRecordId: leadRecord.id,
+              occurredAt: new Date(activity.occurredAt),
+              metadata: { source, scenario, templateKey: "outreach", nextAction: item.nextAction, approvalRequired: true }
+            }
+          });
+      }
     }
 
     console.log(

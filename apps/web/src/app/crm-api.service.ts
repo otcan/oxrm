@@ -9,6 +9,7 @@ import {
   ViewDefinition,
   ViewRunOptions,
   ViewRunResult,
+  WorkspaceBootstrap,
   WorkspaceLayout,
   XrmObjectType,
   XrmRecord,
@@ -19,6 +20,10 @@ import {
 export class CrmApiService {
   async health() {
     return this.request<HealthResponse>("/api/health");
+  }
+
+  async workspaceBootstrap() {
+    return this.request<WorkspaceBootstrap>("/api/workspace/bootstrap");
   }
 
   async listLeads() {
@@ -49,6 +54,13 @@ export class CrmApiService {
 
   async listTasks() {
     return this.request<TaskRow[]>("/api/tasks");
+  }
+
+  async createTask(input: Partial<TaskRow>) {
+    return this.request<TaskRow>("/api/tasks", {
+      method: "POST",
+      body: JSON.stringify(cleanPayload(input))
+    });
   }
 
   async listDueTasks() {

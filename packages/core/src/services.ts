@@ -1573,6 +1573,9 @@ export function createCrmServices({ db, backupsRequired = false }: ServiceContex
         }));
 
       return {
+        mode: parsed.templateKey === "outreach" ? "outreach" : "job_search",
+        label: labelFromKey(parsed.templateKey),
+        templateKey: parsed.templateKey === "outreach" ? "outreach" : "job_search",
         template: {
           key: parsed.templateKey,
           label: labelFromKey(parsed.templateKey)

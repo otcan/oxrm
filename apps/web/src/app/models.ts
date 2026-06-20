@@ -4,6 +4,81 @@ export interface Metric {
   tone: "neutral" | "good" | "warn";
 }
 
+export type WorkspaceMode = "job_search" | "outreach";
+
+export interface NavDefinition {
+  label: NavItem;
+  path: string;
+}
+
+export interface WorkspaceUiConfig {
+  mode: WorkspaceMode;
+  nav: NavDefinition[];
+  primaryAction: {
+    label: string;
+    objectType: string;
+  };
+  terminology: Record<string, string>;
+  stages: string[];
+  routes: Record<string, string>;
+}
+
+export interface WorkspaceBootstrap {
+  mode: WorkspaceMode;
+  label: string;
+  templateKey: WorkspaceMode;
+}
+
+export interface ProductActionItem {
+  kind: "task" | "suggestion" | "application" | "lead";
+  id: string;
+  title: string;
+  context: string;
+  dueAt?: string | null | undefined;
+  badge?: string | undefined;
+  sortDate: number;
+  sortBucket: number;
+}
+
+export interface ProductStageGroup {
+  label: string;
+  rows: Array<Record<string, unknown>>;
+}
+
+export interface OutreachPipelineRow extends Record<string, unknown> {
+  id: string;
+  name: string;
+  role: string;
+  company: string;
+  stage: string;
+  nextAction: string;
+  lastContact: string;
+  channel: string;
+  badges: string[];
+  record: XrmRecord;
+}
+
+export interface OutreachPersonRow {
+  id: string;
+  name: string;
+  role: string;
+  company: string;
+  lastContact: string;
+  activeOutreach: number;
+  record: XrmRecord;
+}
+
+export interface OutreachCompanyRow {
+  id: string;
+  company: string;
+  domain: string;
+  activePeople: number;
+  activeLeads: number;
+  lastContact: string;
+  nextAction: string;
+  record: XrmRecord;
+}
+
 export interface LeadRow {
   id: string;
   fullName: string;
@@ -210,6 +285,9 @@ export interface XrmFile {
 }
 
 export interface WorkspaceLayout {
+  mode?: WorkspaceMode;
+  label?: string;
+  templateKey?: WorkspaceMode;
   template: {
     key: string;
     label: string;
@@ -229,6 +307,9 @@ export type NavItem =
   | "Applications"
   | "Jobs"
   | "Contacts"
+  | "Pipeline"
+  | "People"
+  | "Companies"
   | "Settings"
   | "Advanced"
   | "Views"

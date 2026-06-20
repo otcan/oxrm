@@ -75,6 +75,10 @@ export async function buildServer() {
     return services.health();
   });
 
+  app.get("/api/workspace/bootstrap", async () => {
+    return resolveWorkspaceBootstrap();
+  });
+
   app.get("/api/leads", async (request) => {
     const query = request.query as { q?: string; limit?: string };
     return services.listLeads({
@@ -452,6 +456,23 @@ export async function buildServer() {
   app.delete("/api/testing/synthetic", async () => services.cleanupSyntheticData());
 
   return app;
+}
+
+function resolveWorkspaceBootstrap() {
+  const explicit = process.env["OXRM_WORKSPACE_MODE"];
+  const target = process.env["OXRM_DEPLOY_TARGET"];
+  const scenario = process.env["OXRM_DEMO_SCENARIO"];
+  const mode =
+    explicit === "outreach" || explicit === "job_search"
+      ? explicit
+      : target === "linkedin-outreach-demo" || scenario === "linkedin-outreach"
+        ? "outreach"
+        : "job_search";
+  return {
+    mode,
+    label: mode === "outreach" ? "Outreach" : "Job Search",
+    templateKey: mode
+  };
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

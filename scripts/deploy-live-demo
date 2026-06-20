@@ -110,6 +110,7 @@ OXRM_DEPLOY_GIT_REF=${git_ref}
 OXRM_DEPLOY_GITHUB_RUN_ID=${github_run_id}
 OXRM_DEPLOY_GITHUB_RUN_NUMBER=${github_run_number}
 OXRM_DEPLOYED_AT=${deployed_at}
+OXRM_WORKSPACE_MODE=${template}
 EOF
 mv "$tmp_env" "$env_file"
 chmod 600 "$env_file"

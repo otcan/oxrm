@@ -1,1172 +1,185 @@
-<main class="shell">
-  <aside class="sidebar" aria-label="Primary">
-    <div class="brand">
-      <span class="brand-mark">OC</span>
-      <div>
-        <strong>oXRM</strong>
-        <small>Self-hosted outreach</small>
-      </div>
-    </div>
-
-    <nav>
-      @for (item of navItems; track item) {
-        <button type="button" [class.active]="item === selectedNav()" (click)="selectNav(item)">
-          {{ item }}
-        </button>
+<oc-app-shell
+  [mode]="workspaceMode()"
+  [nav]="navItems()"
+  [selectedNav]="selectedNav()"
+  [subtitle]="subtitle()"
+  [hasDetail]="!!sideDetailSelection()"
+  [backupHealth]="backupHealth()"
+  (selectNav)="selectNav($event)"
+  (settings)="selectSettings()"
+  (refresh)="refresh()"
+>
+  <ng-container main>
+    @switch (selectedNav()) {
+      @case ("Today") {
+        <oc-today-page
+          [mode]="workspaceMode()"
+          [primaryActionLabel]="primaryActionLabel()"
+          [metrics]="todaySummary()"
+          [actions]="todayActions()"
+          [emptyText]="workspaceMode() === 'outreach' ? 'No outreach actions due. Add a lead or create a follow-up.' : 'No next actions. Add an application or review saved jobs.'"
+          [applicationCounts]="applicationCounts()"
+          [upcomingTitle]="upcomingInterview() ? rowText(upcomingInterview()!, 'title') : ''"
+          [upcomingDate]="upcomingInterview() ? rowDate(upcomingInterview()!, 'scheduledAt') : ''"
+          [outreachPipelineSummary]="outreachPipelineSummary()"
+          [recentlyEngaged]="outreachRecentlyEngaged()"
+          (primaryAction)="startCreatePrimary()"
+          (openAction)="openTodayAction($event)"
+          (openSecondary)="openTodaySecondary()"
+          (openUpcoming)="openUpcomingInterview()"
+          (openRecent)="openRecentActivity($event)"
+        />
       }
-    </nav>
 
-    <button
-      type="button"
-      class="settings-nav"
-      [class.active]="selectedNav() === 'Settings' || selectedNav() === 'Advanced'"
-      (click)="selectSettings()"
-      aria-label="Settings"
-    >
-      <span aria-hidden="true">⚙</span>
-      Settings
-    </button>
-  </aside>
+      @case ("Applications") {
+        <oc-job-applications-page
+          [search]="applicationSearch()"
+          [stageFilter]="applicationStageFilter()"
+          [groups]="applicationStageGroups()"
+          [selectedId]="selectedRecordId()"
+          (searchChange)="setApplicationSearch($event)"
+          (stageFilterChange)="setApplicationStageFilter($event)"
+          (add)="startCreateRecord('application')"
+          (open)="selectRecordRow($event)"
+        />
+      }
 
-  <section class="workspace">
-    <div class="workspace-grid" [class.no-detail]="!sideDetailSelection()">
-      <div class="workspace-main">
-        <header class="topbar">
-          <div>
-            <h1>{{ selectedNav() }}</h1>
-            <p>{{ subtitle() }}</p>
+      @case ("Jobs") {
+        <oc-job-jobs-page
+          [search]="jobSearch()"
+          [matchFilter]="jobMatchFilter()"
+          [rows]="filteredJobRows()"
+          [selectedId]="selectedRecordId()"
+          (searchChange)="setJobSearch($event)"
+          (matchFilterChange)="setJobMatchFilter($event)"
+          (add)="startCreateRecord('job')"
+          (open)="selectRecordRow($event)"
+        />
+      }
+
+      @case ("Contacts") {
+        <oc-job-contacts-page
+          [search]="contactSearch()"
+          [rows]="contactRows()"
+          (searchChange)="setContactSearch($event)"
+          (add)="startCreateRecord('job_contact')"
+          (open)="openContact($event)"
+        />
+      }
+
+      @case ("Pipeline") {
+        <oc-outreach-pipeline-page
+          [search]="pipelineSearch()"
+          [stageFilter]="pipelineStageFilter()"
+          [stages]="uiConfig().stages"
+          [groups]="outreachPipelineGroups()"
+          [selectedId]="selectedRecordId()"
+          (searchChange)="setPipelineSearch($event)"
+          (stageFilterChange)="setPipelineStageFilter($event)"
+          (add)="startCreateRecord('lead')"
+          (open)="openOutreachPipeline($event)"
+        />
+      }
+
+      @case ("People") {
+        <oc-outreach-people-page
+          [search]="peopleSearch()"
+          [rows]="filteredOutreachPeopleRows()"
+          (searchChange)="setPeopleSearch($event)"
+          (add)="startCreateRecord('lead')"
+          (open)="openOutreachPerson($event)"
+        />
+      }
+
+      @case ("Companies") {
+        <oc-outreach-companies-page
+          [search]="companySearch()"
+          [rows]="filteredOutreachCompanyRows()"
+          (searchChange)="setCompanySearch($event)"
+          (add)="startCreateRecord('lead')"
+          (open)="openOutreachCompany($event)"
+        />
+      }
+
+      @case ("Settings") {
+        <oc-settings-page
+          [mode]="workspaceMode()"
+          [backupHealth]="backupHealth()"
+          [events]="visibleEvents()"
+          [objectTypes]="objectTypes()"
+          [views]="views()"
+          (refresh)="refresh()"
+          (openAdvanced)="selectNav('Advanced')"
+          (openEvent)="selectEvent($event)"
+        />
+      }
+
+      @case ("Advanced") {
+        <oc-settings-page
+          [mode]="workspaceMode()"
+          [advanced]="true"
+          [backupHealth]="backupHealth()"
+          [events]="visibleEvents()"
+          [objectTypes]="objectTypes()"
+          [views]="views()"
+          (refresh)="refresh()"
+          (openEvent)="selectEvent($event)"
+        />
+      }
+    }
+
+    @if (recordCreateOpen()) {
+      <div class="modal-backdrop" (click)="closeCreateRecord()">
+        <section class="modal" (click)="$event.stopPropagation()">
+          <header>
+            <div>
+              <h2>Add {{ selectedObjectType()?.label || 'record' }}</h2>
+              <p>Fill the fields that matter now. More structure can be added later.</p>
+            </div>
+            <button type="button" (click)="closeCreateRecord()">Close</button>
+          </header>
+          <div class="form-grid">
+            @for (field of createFields(); track field.key) {
+              <label>
+                {{ field.label }}
+                <input
+                  [ngModel]="recordForm()[field.key] || ''"
+                  (ngModelChange)="setRecordField(field.key, $event)"
+                  [name]="'record-' + field.key"
+                  [required]="field.required || false"
+                >
+              </label>
+            }
           </div>
-          @if (backupHealth() === 'degraded') {
-            <button type="button" class="status-pill warn" (click)="refresh()">
-              Backup degraded
-            </button>
+          @if (saveError()) {
+            <div class="empty error">{{ saveError() }}</div>
           }
-        </header>
-
-        @switch (selectedNav()) {
-          @case ("Today") {
-            <section class="today-heading">
-              <div>
-                <h2>{{ todayActions().length }} {{ todayActions().length === 1 ? 'thing needs' : 'things need' }} your attention</h2>
-              </div>
-              <button type="button" class="primary" (click)="startCreateRecord('application')">+ Add application</button>
-            </section>
-
-            <section class="metrics compact" aria-label="Job search summary">
-              @for (metric of todaySummary(); track metric.label) {
-                <article class="metric" [class.good]="metric.tone === 'good'" [class.warn]="metric.tone === 'warn'">
-                  <span>{{ metric.label }}</span>
-                  <strong>{{ metric.value }}</strong>
-                </article>
-              }
-            </section>
-
-            <section class="today-grid">
-              <article class="panel next-actions-panel">
-                <header>
-                  <div>
-                    <h2>Next actions</h2>
-                    <p>Overdue first, then today, then upcoming.</p>
-                  </div>
-                </header>
-                <div class="simple-list">
-                  @for (item of todayActions(); track item.kind + item.id) {
-                    <button type="button" class="list-row action-row" [class.suggested]="item.badge" (click)="openTodayAction(item)">
-                      <div>
-                        <strong>{{ item.title }}</strong>
-                        <span>{{ item.context }}</span>
-                      </div>
-                      <div class="row-meta">
-                        @if (item.badge) {
-                          <em>{{ item.badge }}</em>
-                        }
-                        <time>{{ actionDueLabel(item) }}</time>
-                      </div>
-                    </button>
-                  } @empty {
-                    <div class="empty subtle">No next actions. Add an application or review saved jobs.</div>
-                  }
-                </div>
-              </article>
-
-              <aside class="today-side">
-                @if (upcomingInterview(); as interview) {
-                  <article class="panel compact-panel">
-                    <h2>Upcoming</h2>
-                    <button type="button" class="mini-row action-row" (click)="selectRecordRow(interview)">
-                      <strong>{{ rowText(interview, 'title') }}</strong>
-                      <span>{{ rowDate(interview, 'scheduledAt') }}</span>
-                    </button>
-                  </article>
-                }
-
-                <article class="panel compact-panel">
-                  <h2>Applications</h2>
-                  <div class="summary-line">
-                    <strong>{{ applicationCounts().active }} active</strong>
-                    <span>{{ applicationCounts().waiting }} waiting · {{ applicationCounts().interviewing }} interviewing</span>
-                  </div>
-                  <button type="button" (click)="selectNav('Applications')">Open applications</button>
-                </article>
-              </aside>
-            </section>
-          }
-
-          @case ("Applications") {
-            <section class="page-toolbar">
-              <label>
-                Search
-                <input [ngModel]="applicationSearch()" (ngModelChange)="setApplicationSearch($event)" name="applicationSearch" placeholder="Role, company, contact">
-              </label>
-              <label>
-                Stage
-                <select [ngModel]="applicationStageFilter()" (ngModelChange)="setApplicationStageFilter($event)" name="applicationStage">
-                  <option value="all">All stages</option>
-                  <option value="Saved">Saved</option>
-                  <option value="Preparing">Preparing</option>
-                  <option value="Applied">Applied</option>
-                  <option value="Interviewing">Interviewing</option>
-                  <option value="Closed">Closed</option>
-                </select>
-              </label>
-              <button type="button" class="primary" (click)="startCreateRecord('application')">+ Add application</button>
-            </section>
-
-            <section class="stage-board product-board" aria-label="Applications by stage">
-              @for (group of applicationStageGroups(); track group.label) {
-                <section class="stage-lane product-lane">
-                  <header>
-                    <h3>{{ group.label }}</h3>
-                    <span>{{ group.rows.length }}</span>
-                  </header>
-                  <div class="application-stack">
-                    @for (row of group.rows; track row['id']) {
-                      <button type="button" class="application-card compact-card" [class.selected]="isSelected('record', rowText(row, 'id'))" (click)="selectRecordRow(row)">
-                        <div class="application-card-header">
-                          <div>
-                            <strong>{{ rowText(row, 'role') }}</strong>
-                            <span>{{ rowText(row, 'company') }}</span>
-                          </div>
-                          <em
-                            [class.good]="fitTone(row) === 'good'"
-                            [class.warn]="fitTone(row) === 'warn'"
-                            [class.muted]="fitTone(row) === 'muted'"
-                          >
-                            {{ fitLabel(row) }}
-                          </em>
-                        </div>
-                        <p>{{ stageLabel(row['stage']) }}</p>
-                        <span>Next: {{ applicationNextAction(row) }}</span>
-                        <small>Contact: {{ applicationContact(row) }}</small>
-                      </button>
-                    }
-                  </div>
-                </section>
-              }
-            </section>
-          }
-
-          @case ("Jobs") {
-            <section class="page-toolbar">
-              <label>
-                Search
-                <input [ngModel]="jobSearch()" (ngModelChange)="setJobSearch($event)" name="jobSearch" placeholder="Role, company, location">
-              </label>
-              <label>
-                Match
-                <select [ngModel]="jobMatchFilter()" (ngModelChange)="setJobMatchFilter($event)" name="jobMatch">
-                  <option value="all">All matches</option>
-                  <option value="strong">Strong match</option>
-                  <option value="possible">Possible match</option>
-                  <option value="weak">Weak match</option>
-                  <option value="not">Not assessed</option>
-                </select>
-              </label>
-              <button type="button" class="primary" (click)="startCreateRecord('job')">+ Add job</button>
-            </section>
-
-            <section class="panel product-list-panel">
-              <div class="simple-list">
-                @for (row of filteredJobRows(); track row['id']) {
-                  <button type="button" class="list-row job-row action-row" [class.selected]="isSelected('record', rowText(row, 'id'))" (click)="selectRecordRow(row)">
-                    <div>
-                      <strong>{{ rowText(row, 'title') }}</strong>
-                      <span>{{ rowText(row, 'company') }} · {{ rowText(row, 'location') }}</span>
-                      <small>{{ rowText(row, 'platform') }} · {{ stageLabel(row['applicationStage']) }}</small>
-                    </div>
-                    <div class="row-meta">
-                      <em
-                        [class.good]="fitTone(row) === 'good'"
-                        [class.warn]="fitTone(row) === 'warn'"
-                        [class.muted]="fitTone(row) === 'muted'"
-                      >
-                        {{ fitLabel(row) }}
-                      </em>
-                      <time>{{ rowDate(row, 'lastTouchAt') !== '-' ? rowDate(row, 'lastTouchAt') : 'Saved' }}</time>
-                    </div>
-                  </button>
-                } @empty {
-                  <div class="empty subtle">No jobs match this filter.</div>
-                }
-              </div>
-            </section>
-          }
-
-          @case ("Contacts") {
-            <section class="page-toolbar slim">
-              <label>
-                Search
-                <input [ngModel]="contactSearch()" (ngModelChange)="setContactSearch($event)" name="contactSearch" placeholder="Name, company, role">
-              </label>
-              <button type="button" class="primary" (click)="startCreateRecord('job_contact')">+ Add contact</button>
-            </section>
-
-            <section class="panel product-list-panel">
-              <div class="simple-list">
-                @for (contact of contactRows(); track contact.id || contact.name) {
-                  <button type="button" class="list-row contact-row action-row" (click)="openContact(contact)">
-                    <div>
-                      <strong>{{ contact.name }}</strong>
-                      <span>{{ contact.title }} at {{ contact.company }}</span>
-                      <small>Last contact: {{ contact.lastContact ? rowDate({ lastContact: contact.lastContact }, 'lastContact') : 'Not recorded' }}</small>
-                    </div>
-                    <div class="row-meta">
-                      <time>{{ contact.linkedApplications }} {{ contact.linkedApplications === 1 ? 'application' : 'applications' }}</time>
-                    </div>
-                  </button>
-                } @empty {
-                  <div class="empty subtle">No contacts yet.</div>
-                }
-              </div>
-            </section>
-          }
-
-          @case ("Start") {
-            <section class="start-hero">
-              <div>
-                <span>Local-first onboarding</span>
-                <h2>Turn this clone into a working outreach system.</h2>
-                <p>Choose a workflow, fill the required XRM sections, then let Codex read local state, prepare drafts, and keep humans in control before anything external happens.</p>
-              </div>
-              <div class="start-progress">
-                <strong>{{ onboardingProgress().label }}</strong>
-                <small>{{ activeTemplateKey() === 'job_search' ? 'Job search setup' : 'Outreach setup' }}</small>
-              </div>
-            </section>
-
-            <section class="start-template-switch" aria-label="Choose onboarding workflow">
-              <button type="button" [class.active]="activeTemplateKey() === 'job_search'" (click)="selectTemplate('job_search')">
-                <strong>Job search</strong>
-                <span>Applications, CVs, cover letters, job fits, recruiters, and follow-ups.</span>
-              </button>
-              <button type="button" [class.active]="activeTemplateKey() === 'outreach'" (click)="selectTemplate('outreach')">
-                <strong>Outreach / CRM</strong>
-                <span>Leads, people, companies, messages, tasks, outcomes, and relationship history.</span>
-              </button>
-            </section>
-
-            <section class="panels start-layout">
-              <article class="panel start-checklist">
-                <header>
-                  <div>
-                    <h2>Setup Checklist</h2>
-                    <p>Each row maps to XRM records and views that an agent can inspect locally.</p>
-                  </div>
-                  <button type="button" (click)="selectNav('Workspace')">Open workspace</button>
-                </header>
-                <div class="start-step-list">
-                  @for (step of onboardingSteps(); track step.key) {
-                    <button type="button" class="start-step action-row" [class.complete]="step.complete" (click)="openOnboardingStep(step)">
-                      <span class="step-state">{{ step.complete ? 'Ready' : 'Needs setup' }}</span>
-                      <div>
-                        <strong>{{ step.title }}</strong>
-                        <p>{{ step.description }}</p>
-                        <small>{{ step.status }}</small>
-                      </div>
-                      <em>{{ step.actionLabel }}</em>
-                    </button>
-                  }
-                </div>
-              </article>
-
-              <article class="panel start-agent-panel">
-                <header>
-                  <div>
-                    <h2>Use With Codex</h2>
-                    <p>Paste this into a new Codex thread after the repo is running locally.</p>
-                  </div>
-                  <button type="button" (click)="copyOnboardingPrompt()">
-                    {{ copiedPrompt() === 'prompt' ? 'Copied' : 'Copy prompt' }}
-                  </button>
-                </header>
-                <pre>{{ onboardingPrompt() }}</pre>
-              </article>
-            </section>
-
-            <section class="panels start-layout lower">
-              <article class="panel start-command-panel">
-                <header>
-                  <div>
-                    <h2>One-command local setup</h2>
-                    <p>Use this from a fresh clone. It starts Docker, migrates, seeds the structure, and loads the selected demo/template.</p>
-                  </div>
-                  <button type="button" (click)="copyOnboardingCommand()">
-                    {{ copiedPrompt() === 'command' ? 'Copied' : 'Copy command' }}
-                  </button>
-                </header>
-                <pre>{{ onboardingCommand() }}</pre>
-                <div class="start-note-grid">
-                  <div>
-                    <span>Blank workspace</span>
-                    <strong>./oxrm init --template blank</strong>
-                    <small>Creates structure without synthetic demo records.</small>
-                  </div>
-                  <div>
-                    <span>Safety rule</span>
-                    <strong>Draft only</strong>
-                    <small>Agents can prepare records and drafts. Humans approve sending and uploads.</small>
-                  </div>
-                </div>
-              </article>
-
-              <article class="panel start-command-panel">
-                <header>
-                  <div>
-                    <h2>Data Boundary</h2>
-                    <p>Public demos use synthetic data. A local install keeps real outreach data in your local database unless you configure integrations or backups.</p>
-                  </div>
-                  <button type="button" (click)="selectNav('Settings')">Health</button>
-                </header>
-                <div class="start-note-grid single">
-                  <div>
-                    <span>Import</span>
-                    <strong>Bring your sources first</strong>
-                    <small>Job boards, recruiter mail, CSV files, Sales Navigator exports, warm intros, or manual URLs.</small>
-                  </div>
-                  <div>
-                    <span>Export</span>
-                    <strong>Avoid lock-in</strong>
-                    <small>Keep file paths and records explicit so the workspace can be inspected and moved.</small>
-                  </div>
-                </div>
-              </article>
-            </section>
-          }
-
-          @case ("Dashboard") {
-            <section class="metrics" aria-label="Outreach metrics">
-              @for (metric of metrics(); track metric.label) {
-                <article class="metric" [class.good]="metric.tone === 'good'" [class.warn]="metric.tone === 'warn'">
-                  <span>{{ metric.label }}</span>
-                  <strong>{{ metric.value }}</strong>
-                </article>
-              }
-            </section>
-
-            @if (openActionSuggestionRows().length) {
-              <section class="panels single">
-                <article class="panel">
-                  <header>
-                    <div>
-                      <h2>Agent Suggestions</h2>
-                      <p>Draft-only next actions generated from XRM context. Human approval is still required before anything external happens.</p>
-                    </div>
-                    <button type="button" (click)="openViewByKey('job_search.action_suggestions')">Open view</button>
-                  </header>
-                  <div class="blueprint-grid suggestions">
-                    @for (row of openActionSuggestionRows(); track row['id']) {
-                      <button type="button" class="blueprint-card action-row" [class.selected]="isSelected('record', rowText(row, 'id'))" (click)="selectRecordRow(row)">
-                        <span>{{ suggestionMeta(row) }}</span>
-                        <strong>{{ rowText(row, 'title') }}</strong>
-                        <small>{{ rowText(row, 'targetRecord') }}</small>
-                        <p>{{ rowText(row, 'recommendedAction') }}</p>
-                        <time>{{ suggestionDue(row) }}</time>
-                      </button>
-                    }
-                  </div>
-                </article>
-              </section>
-            }
-
-            <section class="panels">
-              <article class="panel">
-                <header>
-                  <h2>Due Tasks</h2>
-                  <button type="button" (click)="refresh()">Refresh</button>
-                </header>
-                <div class="queue">
-                  @for (task of visibleQueue(); track task.id) {
-                    <button type="button" class="queue-row action-row" [class.selected]="isSelected('task', task.id)" (click)="selectTask(task)">
-                      <div>
-                        <strong>{{ task.title }}</strong>
-                        <span>{{ taskTarget(task) }} · {{ stageLabel(task.status) }} · {{ stageLabel(task.type) }}</span>
-                        <small>Last touch: {{ taskLastTouch(task) }}</small>
-                        <small>Next: {{ taskNextAction(task) }}</small>
-                      </div>
-                      <time>{{ task.dueAt ? (task.dueAt | date:'short') : 'No due date' }}</time>
-                    </button>
-                  } @empty {
-                    <div class="empty">No outreach work due today.</div>
-                  }
-                </div>
-              </article>
-
-              <article class="panel">
-                <header>
-                  <h2>Latest Touches</h2>
-                  <button type="button" (click)="selectNav('Timeline')">Open</button>
-                </header>
-                <div class="queue">
-                  @for (event of visibleEvents().slice(0, 5); track event.id) {
-                    <button type="button" class="queue-row action-row" [class.selected]="isSelected('event', event.id)" (click)="selectEvent(event)">
-                      <div>
-                        <strong>{{ eventTitle(event) }}</strong>
-                        <span>{{ eventSubtitle(event) }}</span>
-                        @if (eventSnippet(event)) {
-                          <small>{{ eventSnippet(event) }}</small>
-                        }
-                      </div>
-                      <time>{{ event.occurredAt | date:'short' }}</time>
-                    </button>
-                  } @empty {
-                    <div class="empty">No events recorded.</div>
-                  }
-                </div>
-              </article>
-            </section>
-          }
-
-          @case ("Workspace") {
-            <section class="template-strip" aria-label="Active XRM template">
-              <div>
-                <span>Active template</span>
-                <strong>{{ workspaceLayout()?.template?.label || 'Job Search' }}</strong>
-                <small>{{ workspaceFieldStats().objectTypes }} record types · {{ workspaceFieldStats().fieldCount }} dynamic fields.</small>
-              </div>
-              <div>
-                <span>XRM mappings</span>
-                <strong>{{ workspaceFieldStats().mappingCount }} semantic field mappings</strong>
-                <small>Different record types can map fields like company, agency, account, or employer to the same meaning.</small>
-              </div>
-            </section>
-
-            <section class="job-summary" aria-label="Job search summary">
-              @for (item of workspaceSummaryItems(); track item.key) {
-                <div>
-                  <span>{{ item.label }}</span>
-                  <strong>{{ item.value }}</strong>
-                </div>
-              }
-            </section>
-
-            @if (setupPlaybookRows().length) {
-              <section class="panels single">
-                <article class="panel operator-playbook-panel">
-                  @for (row of setupPlaybookRows().slice(0, 1); track row['id']) {
-                    <header>
-                      <div>
-                        <h2>{{ rowText(row, 'title') }}</h2>
-                        <p>{{ rowText(row, 'audience') }}</p>
-                      </div>
-                      <div class="header-actions">
-                        <button type="button" (click)="openViewByKey(templateViewKey('sources'))">Sources</button>
-                        <button type="button" (click)="openViewByKey(templateViewKey('timers'))">Timers</button>
-                        <button type="button" (click)="selectRecordRow(row)">Open playbook</button>
-                      </div>
-                    </header>
-                    <div class="playbook-grid">
-                      <section>
-                        <h3>Setup</h3>
-                        <p>{{ rowText(row, 'setupChecklist') }}</p>
-                      </section>
-                      <section>
-                        <h3>Daily Loop</h3>
-                        <p>{{ rowText(row, 'dailyLoop') }}</p>
-                      </section>
-                      <section>
-                        <h3>Agent</h3>
-                        <p>{{ rowText(row, 'agentInstructions') }}</p>
-                      </section>
-                      <section>
-                        <h3>Human</h3>
-                        <p>{{ rowText(row, 'humanInstructions') }}</p>
-                      </section>
-                    </div>
-                  }
-                </article>
-              </section>
-            }
-
-            @if (actionBlueprintRows().length || openActionSuggestionRows().length) {
-              <section class="panels action-overview">
-                <article class="panel">
-                  <header>
-                    <div>
-                      <h2>LLM Action Blueprints</h2>
-                      <p>Blueprints describe what agents may read, draft, score, import, or summarize from local XRM records.</p>
-                    </div>
-                    <button type="button" (click)="openViewByKey('job_search.action_blueprints')">Open</button>
-                  </header>
-                  <div class="blueprint-grid">
-                    @for (row of actionBlueprintRows().slice(0, 4); track row['id']) {
-                      <button type="button" class="blueprint-card action-row" [class.selected]="isSelected('record', rowText(row, 'id'))" (click)="selectRecordRow(row)">
-                        <span>{{ rowText(row, 'automationLevel') }}</span>
-                        <strong>{{ rowText(row, 'title') }}</strong>
-                        <small>{{ blueprintTarget(row) }}</small>
-                        <p>{{ rowText(row, 'outputs') }}</p>
-                      </button>
-                    }
-                  </div>
-                </article>
-
-                <article class="panel">
-                  <header>
-                    <div>
-                      <h2>Suggested Actions</h2>
-                      <p>High-fit suggestions and follow-ups that need review before action.</p>
-                    </div>
-                    <button type="button" (click)="openViewByKey('job_search.action_suggestions')">Open</button>
-                  </header>
-                  <div class="queue compact">
-                    @for (row of openActionSuggestionRows().slice(0, 5); track row['id']) {
-                      <button type="button" class="queue-row action-row" [class.selected]="isSelected('record', rowText(row, 'id'))" (click)="selectRecordRow(row)">
-                        <div>
-                          <strong>{{ rowText(row, 'title') }}</strong>
-                          <span>{{ suggestionMeta(row) }} · {{ rowText(row, 'targetRecord') }}</span>
-                          <small>{{ rowText(row, 'recommendedAction') }}</small>
-                        </div>
-                        <time>{{ suggestionDue(row) }}</time>
-                      </button>
-                    } @empty {
-                      <div class="empty">No agent suggestions for this workspace.</div>
-                    }
-                  </div>
-                </article>
-              </section>
-            }
-
-            @if (isJobSearchTemplate()) {
-              <section class="panels single">
-                <article class="panel">
-                  <header>
-                    <div>
-                      <h2>Job Postings</h2>
-                      <p>Consolidated postings from every platform with fit, application phase, and next action.</p>
-                    </div>
-                    <button type="button" (click)="refresh()">Refresh</button>
-                  </header>
-
-                  <div class="application-grid">
-                    @for (row of jobRows(); track row['id']) {
-                      <button type="button" class="application-card" [class.selected]="isSelected('record', rowText(row, 'id'))" (click)="selectRecordRow(row)">
-                        <div class="application-card-header">
-                          <div>
-                            <strong>{{ rowText(row, 'title') }}</strong>
-                            <span>{{ rowText(row, 'company') }} · {{ rowText(row, 'platform') }}</span>
-                          </div>
-                          <em
-                            [class.good]="fitTone(row) === 'good'"
-                            [class.warn]="fitTone(row) === 'warn'"
-                            [class.muted]="fitTone(row) === 'muted'"
-                          >
-                            {{ fitLabel(row) }}
-                          </em>
-                        </div>
-                        <dl>
-                          <div>
-                            <dt>Phase</dt>
-                            <dd>{{ stageLabel(row['applicationStage']) }}</dd>
-                          </div>
-                          <div>
-                            <dt>Location</dt>
-                            <dd>{{ rowText(row, 'location') }}</dd>
-                          </div>
-                          <div>
-                            <dt>Last touch</dt>
-                            <dd>{{ rowDate(row, 'lastTouchAt') }}</dd>
-                          </div>
-                          <div>
-                            <dt>Status</dt>
-                            <dd>{{ stageLabel(row['status']) }}</dd>
-                          </div>
-                        </dl>
-                        <p>{{ rowText(row, 'nextAction', 'No next action set') }}</p>
-                        <time>Next: {{ rowDate(row, 'nextActionAt') }}</time>
-                      </button>
-                    } @empty {
-                      <div class="empty">No job postings. Run `./oxrm ready` to seed the demo.</div>
-                    }
-                  </div>
-                </article>
-              </section>
-
-              <section class="panels single lower">
-                <article class="panel">
-                  <header>
-                    <div>
-                      <h2>Applications by phase</h2>
-                      <p>Each application links to the posting, fit record, tailored CV, tailored cover letter, and communication ledger.</p>
-                    </div>
-                    <button type="button" (click)="openViewByKey('job_search.applications')">Open view</button>
-                  </header>
-
-                  <div class="stage-board">
-                    @for (group of jobApplicationsByStage(); track group.label) {
-                      <section class="stage-lane" [class.good]="group.tone === 'good'" [class.warn]="group.tone === 'warn'" [class.muted]="group.tone === 'muted'">
-                        <header>
-                          <h3>{{ group.label }}</h3>
-                          <span>{{ group.rows.length }}</span>
-                        </header>
-                        <div class="application-stack">
-                          @for (row of group.rows; track row['id']) {
-                            <button type="button" class="application-card" [class.selected]="isSelected('record', rowText(row, 'id'))" (click)="selectRecordRow(row)">
-                              <div class="application-card-header">
-                                <div>
-                                  <strong>{{ rowText(row, 'role') }}</strong>
-                                  <span>{{ rowText(row, 'company') }}</span>
-                                </div>
-                                <em
-                                  [class.good]="stageTone(row['stage']) === 'good'"
-                                  [class.warn]="stageTone(row['stage']) === 'warn'"
-                                  [class.muted]="stageTone(row['stage']) === 'muted'"
-                                >
-                                  {{ stageLabel(row['stage']) }}
-                                </em>
-                              </div>
-                              <dl>
-                                <div>
-                                  <dt>Responsible</dt>
-                                  <dd>{{ rowText(row, 'responsiblePerson') }}</dd>
-                                </div>
-                                <div>
-                                  <dt>Fit</dt>
-                                  <dd>{{ rowText(row, 'fitRate') }}%</dd>
-                                </div>
-                                <div>
-                                  <dt>CV</dt>
-                                  <dd>{{ rowText(row, 'cvVersion') }}</dd>
-                                </div>
-                                <div>
-                                  <dt>Cover letter</dt>
-                                  <dd>{{ rowText(row, 'coverLetterVersion') }}</dd>
-                                </div>
-                                <div>
-                                  <dt>Last touch</dt>
-                                  <dd>{{ rowDate(row, 'lastTouchAt') }}</dd>
-                                </div>
-                              </dl>
-                              <p>{{ rowText(row, 'nextAction', 'No next action set') }}</p>
-                              <time>Next: {{ rowDate(row, 'nextActionAt') }}</time>
-                            </button>
-                          }
-                        </div>
-                      </section>
-                    } @empty {
-                      <div class="empty">No job applications. Run `./oxrm ready` to seed the demo.</div>
-                    }
-                  </div>
-                </article>
-              </section>
-            } @else {
-              <section class="panels dynamic-view-grid">
-                @for (result of workspaceMainViews(); track result.view.key) {
-                  <article class="panel dynamic-view-card">
-                    <header>
-                      <div>
-                        <h2>{{ result.view.name }}</h2>
-                        <p>{{ result.view.objectType }} · {{ result.returned }} of {{ result.total }}</p>
-                      </div>
-                      <button type="button" (click)="selectView(result.view)">Open</button>
-                    </header>
-                    <div class="queue">
-                      @for (row of viewRows(result, 8); track row['id']) {
-                        <button type="button" class="queue-row action-row" (click)="selectWorkspaceRow(result, row)">
-                          <div>
-                            <strong>{{ viewRecordTitle(result, row) }}</strong>
-                            <span>{{ viewRecordSummary(result, row) }}</span>
-                          </div>
-                          <time>{{ rowDate(row, 'updatedAt') }}</time>
-                        </button>
-                      } @empty {
-                        <div class="empty">No records in this view.</div>
-                      }
-                    </div>
-                  </article>
-                }
-              </section>
-            }
-
-            <section class="panels dynamic-view-grid">
-              @for (result of workspaceSecondaryViews(); track result.view.key) {
-                <article class="panel dynamic-view-card">
-                  <header>
-                    <div>
-                      <h2>{{ result.view.name }}</h2>
-                      <p>{{ result.view.objectType }} · {{ result.returned }} of {{ result.total }}</p>
-                    </div>
-                    <button type="button" (click)="selectView(result.view)">Open</button>
-                  </header>
-                  <div class="queue compact">
-                    @for (row of viewRows(result); track row['id']) {
-                      <button type="button" class="queue-row action-row" [class.selected]="isSelected('record', rowText(row, 'id'))" (click)="selectWorkspaceRow(result, row)">
-                        <div>
-                          <strong>{{ viewRecordTitle(result, row) }}</strong>
-                          <span>{{ viewRecordSummary(result, row) }}</span>
-                        </div>
-                        <time>{{ rowDate(row, 'nextActionAt') !== '-' ? rowDate(row, 'nextActionAt') : rowDate(row, 'updatedAt') }}</time>
-                      </button>
-                    } @empty {
-                      <div class="empty">No records in this view.</div>
-                    }
-                  </div>
-                </article>
-              } @empty {
-                <article class="panel">
-                  <div class="empty">No dynamic workspace views. Seed demo data or add view placement metadata.</div>
-                </article>
-              }
-            </section>
-
-            @if (workspaceSidebarViews().length) {
-              <section class="panels dynamic-view-grid compact-grid">
-                @for (result of workspaceSidebarViews(); track result.view.key) {
-                  <article class="panel dynamic-view-card">
-                    <header>
-                      <div>
-                        <h2>{{ result.view.name }}</h2>
-                        <p>{{ result.view.objectType }} · {{ result.total }}</p>
-                      </div>
-                      <button type="button" (click)="selectView(result.view)">Open</button>
-                    </header>
-                    <div class="field-chip-list">
-                      @for (column of viewPreviewColumns(result); track column) {
-                        <span>{{ columnLabel(column) }}</span>
-                      }
-                    </div>
-                  </article>
-                }
-              </section>
-            }
-          }
-
-          @case ("Records") {
-            @if (selectedRecordDetail(); as record) {
-              <section class="record-focus-layout">
-                <article class="panel record-focus-panel">
-                  <header>
-                    <div>
-                      <h2>{{ record.displayName }}</h2>
-                      <p>{{ record.objectType?.label || record.objectType?.slug || 'Record' }} · {{ stageLabel(record.status) }}</p>
-                    </div>
-                    <div class="header-actions">
-                      <button type="button" (click)="showRecordList()">Back to list</button>
-                      <button type="button" class="danger" (click)="deleteRecord(record)">Delete</button>
-                    </div>
-                  </header>
-                  <oc-xrm-record-detail
-                    [record]="record"
-                    [saving]="saving()"
-                    (openRecord)="selectRecordById($event)"
-                    (saveRecord)="saveXrmRecord($event)"
-                  />
-                </article>
-              </section>
-            } @else {
-              <section class="records-layout">
-                <article class="panel">
-                  <header>
-                    <div>
-                      <h2>Record Types</h2>
-                      <p>{{ activeTemplateKey() }} · {{ visibleObjectTypes().length }} types</p>
-                    </div>
-                  </header>
-                  <div class="record-type-list">
-                    @for (objectType of visibleObjectTypes(); track objectType.id) {
-                      <button type="button" [class.active]="objectType.slug === selectedRecordObjectType()" (click)="selectRecordObjectType(objectType.slug)">
-                        <strong>{{ objectType.pluralLabel || objectType.label }}</strong>
-                        <span>{{ objectType.fields?.length || 0 }} fields</span>
-                      </button>
-                    } @empty {
-                      <div class="empty">No record types for this template.</div>
-                    }
-                  </div>
-                </article>
-
-                <article class="panel">
-                  <header>
-                    <div>
-                      <h2>{{ selectedObjectType()?.pluralLabel || selectedObjectType()?.label || 'Records' }}</h2>
-                      <p>{{ records().length }} visible records</p>
-                    </div>
-                    <div class="header-actions">
-                      <button type="button" (click)="loadRecords()">Refresh</button>
-                      <button type="button" class="primary" (click)="openCreateRecord()">Create</button>
-                    </div>
-                  </header>
-
-                  <div class="table-toolbar">
-                    <label>
-                      Search records
-                      <input [ngModel]="recordSearch()" (ngModelChange)="setRecordSearch($event)" name="recordSearch" placeholder="Name, field, source">
-                    </label>
-                  </div>
-
-                  @if (recordsError()) {
-                    <div class="empty error">{{ recordsError() }}</div>
-                  } @else if (recordsLoading()) {
-                    <div class="empty">Loading records...</div>
-                  } @else {
-                    <div class="queue">
-                      @for (record of records(); track record.id) {
-                        <div class="queue-row record-row" [class.selected]="isSelected('record', record.id)">
-                          <button type="button" class="record-main action-row" (click)="selectRecordById(record.id)">
-                          <div>
-                            <strong>{{ record.displayName }}</strong>
-                            <span>{{ stageLabel(record.status) }} · {{ record.source || 'local' }}</span>
-                            <small>{{ recordSummary(record) }}</small>
-                          </div>
-                          </button>
-                          <span class="row-actions" (click)="$event.stopPropagation()">
-                            <button type="button" class="danger" (click)="deleteRecord(record)">Delete</button>
-                          </span>
-                        </div>
-                      } @empty {
-                        <div class="empty">No records for this type.</div>
-                      }
-                    </div>
-                  }
-
-                </article>
-              </section>
-            }
-          }
-
-          @case ("Views") {
-            <section class="panels single">
-              <article class="panel">
-                <header>
-                  <div>
-                    <h2>{{ viewResult()?.view?.name || selectedView()?.name || 'Saved Views' }}</h2>
-                    <p>{{ viewResult()?.view?.objectType || selectedView()?.objectType || 'object' }} · {{ viewResult()?.returned || 0 }} of {{ viewResult()?.total || 0 }}</p>
-                  </div>
-                  <button type="button" (click)="runSelectedView()">Refresh</button>
-                </header>
-
-                @if (selectedViewBlueprintRows().length || selectedViewSuggestionRows().length) {
-                  <section class="view-action-panel" aria-label="Agent actions for this view">
-                    <div class="view-action-header">
-                      <div>
-                        <h3>Action Blueprints</h3>
-                        <p>{{ selectedViewBlueprintRows().length }} available for this view · {{ selectedViewSuggestionRows().length }} active suggestions</p>
-                      </div>
-                      <button type="button" (click)="openViewByKey('job_search.action_blueprints')">All blueprints</button>
-                    </div>
-                    <div class="blueprint-grid compact">
-                      @for (row of selectedViewBlueprintRows(); track row['id']) {
-                        <button
-                          type="button"
-                          class="blueprint-card action-row"
-                          [class.good]="automationTone(row) === 'good'"
-                          [class.warn]="automationTone(row) === 'warn'"
-                          [class.selected]="isSelected('record', rowText(row, 'id'))"
-                          (click)="selectRecordRow(row)"
-                        >
-                          <span>{{ rowText(row, 'automationLevel') }}</span>
-                          <strong>{{ rowText(row, 'title') }}</strong>
-                          <small>{{ rowText(row, 'approvalRequired') }}</small>
-                          <p>{{ rowText(row, 'outputs') }}</p>
-                        </button>
-                      }
-                      @for (row of selectedViewSuggestionRows(); track row['id']) {
-                        <button type="button" class="blueprint-card suggestion action-row" [class.selected]="isSelected('record', rowText(row, 'id'))" (click)="selectRecordRow(row)">
-                          <span>{{ suggestionMeta(row) }}</span>
-                          <strong>{{ rowText(row, 'title') }}</strong>
-                          <small>{{ rowText(row, 'targetRecord') }}</small>
-                          <p>{{ rowText(row, 'recommendedAction') }}</p>
-                        </button>
-                      }
-                    </div>
-                  </section>
-                }
-
-                <div class="table-toolbar">
-                  <label>
-                    Search
-                    <input [ngModel]="viewSearch()" (ngModelChange)="setViewSearch($event)" name="viewSearch" placeholder="Search this view">
-                  </label>
-                  <button type="button" (click)="clearViewFilters()">Clear filters</button>
-                </div>
-
-                @if (viewError()) {
-                  <div class="empty error">{{ viewError() }}</div>
-                } @else if (viewLoading()) {
-                  <div class="empty">Loading view...</div>
-                } @else if (visibleViewRows().length) {
-                  <div class="table-hint">Click any row to inspect details. Sort with column headers or filter inside a column.</div>
-                  <div class="mobile-view-controls">
-                    <div class="mobile-sort-row">
-                      <label>
-                        Sort by
-                        <select [ngModel]="viewSortField()" (ngModelChange)="setSortField($event)" name="mobileViewSort">
-                          <option value="">Default order</option>
-                          @for (column of visibleViewColumns(); track column) {
-                            <option [value]="column">{{ columnLabel(column) }}</option>
-                          }
-                        </select>
-                      </label>
-                      <button type="button" [disabled]="!viewSortField()" (click)="toggleSortDirection()">
-                        {{ viewSortDirection() === 'asc' ? 'Asc' : 'Desc' }}
-                      </button>
-                    </div>
-                    <details class="mobile-filter-panel">
-                      <summary>Column filters</summary>
-                      <div class="mobile-filter-grid">
-                        @for (column of visibleViewColumns(); track column) {
-                          <label>
-                            {{ columnLabel(column) }}
-                            <input
-                              [ngModel]="columnFilters()[column] || ''"
-                              (ngModelChange)="setColumnFilter(column, $event)"
-                              [name]="'mobile-filter-' + column"
-                              placeholder="Filter"
-                            >
-                          </label>
-                        }
-                      </div>
-                    </details>
-                  </div>
-                  <div class="table-wrap">
-                    <table class="view-table">
-                      <thead>
-                        <tr>
-                          @for (column of visibleViewColumns(); track column) {
-                            <th>
-                              <button type="button" class="sort-button" (click)="toggleSort(column)">
-                                {{ columnLabel(column) }}
-                                @if (sortIndicator(column)) {
-                                  <span>{{ sortIndicator(column) }}</span>
-                                }
-                              </button>
-                              <input
-                                class="column-filter"
-                                [ngModel]="columnFilters()[column] || ''"
-                                (ngModelChange)="setColumnFilter(column, $event)"
-                                [name]="'filter-' + column"
-                                placeholder="Filter"
-                              >
-                            </th>
-                          }
-                        </tr>
-                      </thead>
-                      <tbody>
-                        @for (row of visibleViewRows(); track row['id']) {
-                          <tr
-                            class="clickable-row"
-                            [class.selected]="isSelected('record', viewCell(row, 'id'))"
-                            (click)="selectViewRow(row)"
-                          >
-                            @for (column of visibleViewColumns(); track column) {
-                              <td [attr.data-label]="columnLabel(column)">{{ viewCell(row, column) }}</td>
-                            }
-                          </tr>
-                        }
-                      </tbody>
-                    </table>
-                  </div>
-                } @else {
-                  <div class="empty">No records match this view.</div>
-                }
-              </article>
-            </section>
-          }
-
-          @case ("Queue") {
-            <section class="panels single">
-              <article class="panel">
-                <header>
-                  <div>
-                    <h2>Work Queue</h2>
-                    <p>Follow-ups, research, and approvals grouped around the next action.</p>
-                  </div>
-                  <button type="button" (click)="refresh()">Refresh</button>
-                </header>
-                <div class="queue">
-                  @for (task of visibleTasks(); track task.id) {
-                    <button type="button" class="queue-row action-row" [class.selected]="isSelected('task', task.id)" (click)="selectTask(task)">
-                      <div>
-                        <strong>{{ task.title }}</strong>
-                        <span>{{ taskTarget(task) }} · {{ stageLabel(task.status) }} · {{ stageLabel(task.type) }}</span>
-                        <small>Last touch: {{ taskLastTouch(task) }}</small>
-                        <small>Next: {{ taskNextAction(task) }}</small>
-                      </div>
-                      <time>{{ task.dueAt ? (task.dueAt | date:'short') : 'No due date' }}</time>
-                    </button>
-                  } @empty {
-                    <div class="empty">No tasks.</div>
-                  }
-                </div>
-              </article>
-            </section>
-          }
-
-          @case ("Timeline") {
-            <section class="panels single">
-              <article class="panel">
-                <header>
-                  <h2>Timeline</h2>
-                  <button type="button" (click)="refresh()">Refresh</button>
-                </header>
-                <div class="queue">
-                  @for (event of visibleEvents(); track event.id) {
-                    <button type="button" class="queue-row action-row event-row" [class.selected]="isSelected('event', event.id)" (click)="selectEvent(event)">
-                      <div>
-                        <strong>{{ eventTitle(event) }}</strong>
-                        <span>{{ eventSubtitle(event) }}</span>
-                        @if (eventSnippet(event)) {
-                          <small>{{ eventSnippet(event) }}</small>
-                        }
-                      </div>
-                      <time>{{ event.occurredAt | date:'short' }}</time>
-                    </button>
-                  } @empty {
-                    <div class="empty">No events recorded.</div>
-                  }
-                </div>
-              </article>
-            </section>
-          }
-
-          @case ("Settings") {
-            <section class="panels single">
-              <article class="panel">
-                <header>
-                  <h2>System</h2>
-                  <button type="button" (click)="refresh()">Refresh</button>
-                </header>
-                <div class="queue">
-                  <div class="queue-row">
-                    <div>
-                      <strong>Backup</strong>
-                      <span>{{ backupHealth() }}</span>
-                    </div>
-                    <time>active</time>
-                  </div>
-                  <div class="queue-row">
-                    <div>
-                      <strong>Runtime</strong>
-                      <span>Docker instance running the local app and services.</span>
-                    </div>
-                    <time>oxrm</time>
-                  </div>
-                  <button type="button" class="queue-row action-row" (click)="selectNav('Advanced')">
-                    <div>
-                      <strong>Advanced</strong>
-                      <span>Saved views, raw records, activity, schema, and automation setup.</span>
-                    </div>
-                    <time>Open</time>
-                  </button>
-                </div>
-              </article>
-            </section>
-          }
-
-          @case ("Advanced") {
-            <section class="panels single">
-              <article class="panel">
-                <header>
-                  <div>
-                    <h2>Advanced</h2>
-                    <p>Developer and administration surfaces stay here so the default workflow stays focused.</p>
-                  </div>
-                </header>
-                <div class="advanced-grid">
-                  <button type="button" class="action-row" (click)="selectNav('Views')">
-                    <strong>Saved views</strong>
-                    <span>Open configured table views and filters.</span>
-                  </button>
-                  <button type="button" class="action-row" (click)="selectNav('Records')">
-                    <strong>Raw records</strong>
-                    <span>Inspect object types, fields, relationships, and delete records.</span>
-                  </button>
-                  <button type="button" class="action-row" (click)="openViewByKey('job_search.action_blueprints')">
-                    <strong>Advanced automation</strong>
-                    <span>View draft-only action setup and internal workflows.</span>
-                  </button>
-                  <button type="button" class="action-row" (click)="refresh()">
-                    <strong>Backups</strong>
-                    <span>Current backup health: {{ backupHealth() }}.</span>
-                  </button>
-                </div>
-              </article>
-
-              <article class="panel">
-                <header>
-                  <h2>Activity</h2>
-                </header>
-                <div class="queue">
-                  @for (event of visibleEvents(); track event.id) {
-                    <button type="button" class="queue-row action-row event-row" [class.selected]="isSelected('event', event.id)" (click)="selectEvent(event)">
-                      <div>
-                        <strong>{{ eventTitle(event) }}</strong>
-                        <span>{{ eventSubtitle(event) }}</span>
-                        @if (eventSnippet(event)) {
-                          <small>{{ eventSnippet(event) }}</small>
-                        }
-                      </div>
-                      <time>{{ event.occurredAt | date:'short' }}</time>
-                    </button>
-                  } @empty {
-                    <div class="empty">No activity recorded.</div>
-                  }
-                </div>
-              </article>
-            </section>
-          }
-        }
-
-        @if (recordCreateOpen()) {
-          <div class="modal-backdrop" (click)="closeCreateRecord()">
-            <section class="modal" (click)="$event.stopPropagation()">
-              <header>
-                <div>
-                  <h2>Add {{ selectedObjectType()?.label || 'record' }}</h2>
-                  <p>Fill the useful fields now. You can add more detail later.</p>
-                </div>
-                <button type="button" (click)="closeCreateRecord()">Close</button>
-              </header>
-              <div class="form-grid">
-                @for (field of selectedObjectType()?.fields || []; track field.key) {
-                  <label>
-                    {{ field.label }}
-                    <input [ngModel]="recordForm()[field.key] || ''" (ngModelChange)="setRecordField(field.key, $event)" [name]="'record-' + field.key">
-                  </label>
-                }
-              </div>
-              @if (saveError()) {
-                <div class="empty error">{{ saveError() }}</div>
-              }
-              <div class="modal-actions">
-                <button type="button" (click)="closeCreateRecord()">Cancel</button>
-                <button type="button" class="primary" [disabled]="saving()" (click)="createRecord()">Create</button>
-              </div>
-            </section>
+          <div class="modal-actions">
+            <button type="button" (click)="closeCreateRecord()">Cancel</button>
+            <button type="button" class="primary" [disabled]="saving()" (click)="createRecord()">Create</button>
           </div>
-        }
+        </section>
       </div>
+    }
+  </ng-container>
 
-      <oc-detail-panel
-        [selection]="sideDetailSelection()"
-        [leadActivities]="leadActivities()"
-        [loading]="detailLoading()"
-        [saving]="saving()"
-        [error]="detailError()"
-        [saveError]="saveError()"
-        (close)="closeDetail()"
-        (saveLead)="saveLead($event)"
-        (saveTask)="saveTask($event)"
-        (saveRecord)="saveXrmRecord($event)"
-        (openRecord)="selectRecordById($event)"
-      />
-    </div>
-  </section>
-</main>
+  <oc-detail-drawer
+    detail
+    [mode]="workspaceMode()"
+    [selection]="sideDetailSelection()"
+    [leadActivities]="leadActivities()"
+    [loading]="detailLoading()"
+    [saving]="saving()"
+    [error]="detailError()"
+    [saveError]="saveError()"
+    (close)="closeDetail()"
+    (saveLead)="saveLead($event)"
+    (saveTask)="saveTask($event)"
+    (saveRecord)="saveXrmRecord($event)"
+    (openRecord)="selectRecordById($event)"
+    (createFollowUp)="createFollowUpForRecord($event)"
+    (editDraft)="resetDraft($event)"
+    (markApproved)="markDraftApproved($event)"
+    (dismiss)="dismissDraft($event)"
+  />
+</oc-app-shell>
