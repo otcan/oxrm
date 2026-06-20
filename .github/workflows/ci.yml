@@ -236,5 +236,5 @@ jobs:
           OXRM_DEMO_ADMIN_PASSWORD_HASH='${OXRM_DEMO_ADMIN_PASSWORD_HASH}' \
           JOB_SEARCH_DEMO_API_PORT=18511 \
           LINKEDIN_OUTREACH_DEMO_API_PORT=18521 \
-            docker compose -p oxrm-demo-proxy -f infra/compose/docker-compose.demo-proxy.yml up -d
+            docker compose -p oxrm-demo-proxy -f infra/compose/docker-compose.demo-proxy.yml up -d --force-recreate
           REMOTE
