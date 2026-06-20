@@ -462,6 +462,8 @@ function resolveWorkspaceBootstrap() {
   const explicit = process.env["OXRM_WORKSPACE_MODE"];
   const target = process.env["OXRM_DEPLOY_TARGET"];
   const scenario = process.env["OXRM_DEMO_SCENARIO"];
+  const demoEnabled = process.env["OXRM_DEMO_MODE"] === "true";
+  const guideVersion = Number(process.env["OXRM_DEMO_GUIDE_VERSION"] ?? "1");
   const mode =
     explicit === "outreach" || explicit === "job_search"
       ? explicit
@@ -471,7 +473,13 @@ function resolveWorkspaceBootstrap() {
   return {
     mode,
     label: mode === "outreach" ? "Outreach" : "Job Search",
-    templateKey: mode
+    templateKey: mode,
+    demo: {
+      enabled: demoEnabled,
+      guideVersion: Number.isFinite(guideVersion) && guideVersion > 0 ? guideVersion : 1,
+      readOnly: demoEnabled,
+      resettable: demoEnabled
+    }
   };
 }
 

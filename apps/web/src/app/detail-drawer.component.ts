@@ -2,6 +2,8 @@ import { CommonModule } from "@angular/common";
 import { ChangeDetectionStrategy, Component, EventEmitter, Input, Output, ViewChild } from "@angular/core";
 import { ActivityListComponent } from "./activity-list.component";
 import { EventDetailComponent } from "./event-detail.component";
+import { JobApplicationDetailComponent } from "./job-application-detail.component";
+import { JobDetailComponent } from "./job-detail.component";
 import { LeadDetailComponent } from "./lead-detail.component";
 import { TaskDetailComponent } from "./task-detail.component";
 import { XrmRecordDetailComponent } from "./xrm-record-detail.component";
@@ -12,7 +14,7 @@ type DetailTab = "overview" | "draft" | "activity";
 @Component({
   selector: "oc-detail-drawer",
   standalone: true,
-  imports: [CommonModule, ActivityListComponent, EventDetailComponent, LeadDetailComponent, TaskDetailComponent, XrmRecordDetailComponent],
+  imports: [CommonModule, ActivityListComponent, EventDetailComponent, JobApplicationDetailComponent, JobDetailComponent, LeadDetailComponent, TaskDetailComponent, XrmRecordDetailComponent],
   template: `
     <aside class="detail-panel" [class.empty-panel]="!selection">
       @if (selection) {
@@ -153,6 +155,37 @@ type DetailTab = "overview" | "draft" | "activity";
                   (saveRecord)="saveRecord.emit($event)"
                 />
               </details>
+            } @else if (isJobRecord(selection.item)) {
+              <oc-job-detail
+                [record]="selection.item"
+                (startApplication)="startApplicationFromJob.emit($event)"
+                (markNotFit)="markJobNotFit.emit($event)"
+              />
+
+              <details class="advanced-detail">
+                <summary>Advanced details</summary>
+                <oc-xrm-record-detail
+                  [record]="selection.item"
+                  [saving]="saving"
+                  (openRecord)="openRecord.emit($event)"
+                  (saveRecord)="saveRecord.emit($event)"
+                />
+              </details>
+            } @else if (isApplicationRecord(selection.item)) {
+              <oc-job-application-detail
+                [record]="selection.item"
+                (openCvLibrary)="openCvLibrary.emit()"
+              />
+
+              <details class="advanced-detail">
+                <summary>Advanced details</summary>
+                <oc-xrm-record-detail
+                  [record]="selection.item"
+                  [saving]="saving"
+                  (openRecord)="openRecord.emit($event)"
+                  (saveRecord)="saveRecord.emit($event)"
+                />
+              </details>
             } @else {
               <oc-xrm-record-detail
                 [record]="selection.item"
@@ -190,6 +223,9 @@ export class DetailDrawerComponent {
   @Output() editDraft = new EventEmitter<XrmRecord>();
   @Output() markApproved = new EventEmitter<XrmRecord>();
   @Output() dismiss = new EventEmitter<XrmRecord>();
+  @Output() startApplicationFromJob = new EventEmitter<XrmRecord>();
+  @Output() markJobNotFit = new EventEmitter<XrmRecord>();
+  @Output() openCvLibrary = new EventEmitter<void>();
 
   @ViewChild(LeadDetailComponent) leadDetail?: LeadDetailComponent;
   @ViewChild(TaskDetailComponent) taskDetail?: TaskDetailComponent;
@@ -222,6 +258,14 @@ export class DetailDrawerComponent {
 
   isOutreachLeadRecordItem(record: XrmRecord) {
     return this.mode === "outreach" && record.objectType?.slug === "lead";
+  }
+
+  isJobRecord(record: XrmRecord) {
+    return this.mode === "job_search" && record.objectType?.slug === "job";
+  }
+
+  isApplicationRecord(record: XrmRecord) {
+    return this.mode === "job_search" && record.objectType?.slug === "application";
   }
 
   field(record: XrmRecord, key: string, fallback = "-") {

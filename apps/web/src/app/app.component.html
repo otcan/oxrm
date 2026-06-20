@@ -1,3 +1,11 @@
+@if (demoWelcomeOpen()) {
+  <oc-demo-welcome-page
+    [mode]="workspaceMode()"
+    (showWorkflow)="showGuidedTour()"
+    (runLocally)="openConnectAi()"
+    (explore)="exploreSampleData()"
+  />
+} @else {
 <oc-app-shell
   [mode]="workspaceMode()"
   [nav]="navItems()"
@@ -5,9 +13,12 @@
   [subtitle]="subtitle()"
   [hasDetail]="!!sideDetailSelection()"
   [backupHealth]="backupHealth()"
+  [demoEnabled]="bootstrap()?.demo?.enabled || false"
   (selectNav)="selectNav($event)"
   (settings)="selectSettings()"
   (refresh)="refresh()"
+  (guidedTour)="showGuidedTour()"
+  (runLocal)="openConnectAi()"
 >
   <ng-container main>
     @switch (selectedNav()) {
@@ -32,14 +43,20 @@
       }
 
       @case ("Applications") {
+        <div class="secondary-page-actions">
+          <button type="button" (click)="openCvLibrary()">CV library</button>
+        </div>
         <oc-job-applications-page
           [search]="applicationSearch()"
-          [stageFilter]="applicationStageFilter()"
+          [controls]="applicationFilterControls()"
+          [total]="jobApplicationRows().length"
+          [shown]="filteredApplicationRows().length"
           [groups]="applicationStageGroups()"
           [selectedId]="selectedRecordId()"
           (searchChange)="setApplicationSearch($event)"
-          (stageFilterChange)="setApplicationStageFilter($event)"
-          (add)="startCreateRecord('application')"
+          (filterChange)="setApplicationFilter($event)"
+          (clearFilters)="clearApplicationFilters()"
+          (add)="startCreateApplication()"
           (open)="selectRecordRow($event)"
         />
       }
@@ -47,13 +64,19 @@
       @case ("Jobs") {
         <oc-job-jobs-page
           [search]="jobSearch()"
-          [matchFilter]="jobMatchFilter()"
-          [rows]="filteredJobRows()"
+          [controls]="jobFilterControls()"
+          [result]="jobPageResult()"
           [selectedId]="selectedRecordId()"
           (searchChange)="setJobSearch($event)"
-          (matchFilterChange)="setJobMatchFilter($event)"
-          (add)="startCreateRecord('job')"
+          (filterChange)="setJobFilter($event)"
+          (clearFilters)="clearJobFilters()"
+          (pageChange)="setJobPage($event)"
+          (pageSizeChange)="setJobPageSize($event)"
+          (add)="startCreateJob()"
           (open)="selectRecordRow($event)"
+          (startApplication)="startApplicationFromJob($event)"
+          (markNotFit)="markJobNotFit($event)"
+          (saveLater)="saveJobForLater($event)"
         />
       }
 
@@ -70,12 +93,14 @@
       @case ("Pipeline") {
         <oc-outreach-pipeline-page
           [search]="pipelineSearch()"
-          [stageFilter]="pipelineStageFilter()"
-          [stages]="uiConfig().stages"
+          [controls]="outreachPipelineFilterControls()"
+          [total]="outreachPipelineRows().length"
+          [shown]="filteredOutreachPipelineRows().length"
           [groups]="outreachPipelineGroups()"
           [selectedId]="selectedRecordId()"
           (searchChange)="setPipelineSearch($event)"
-          (stageFilterChange)="setPipelineStageFilter($event)"
+          (filterChange)="setPipelineFilter($event)"
+          (clearFilters)="clearPipelineFilters()"
           (add)="startCreateRecord('lead')"
           (open)="openOutreachPipeline($event)"
         />
@@ -161,6 +186,31 @@
         </section>
       </div>
     }
+
+    @if (addApplicationOpen()) {
+      <oc-add-application-modal
+        [cvs]="cvRecords()"
+        [prefill]="applicationPrefill()"
+        (close)="closeAddApplication()"
+        (createApplication)="createApplicationRecord($event)"
+      />
+    }
+
+    @if (addJobOpen()) {
+      <oc-add-job-modal
+        (close)="closeAddJob()"
+        (createJob)="createJobRecord($event)"
+      />
+    }
+
+    @if (cvLibraryOpen()) {
+      <oc-cv-library-modal
+        [cvs]="cvRecords()"
+        [applications]="jobApplicationRows()"
+        (close)="closeCvLibrary()"
+        (open)="openCvRecord($event)"
+      />
+    }
   </ng-container>
 
   <oc-detail-drawer
@@ -181,5 +231,21 @@
     (editDraft)="resetDraft($event)"
     (markApproved)="markDraftApproved($event)"
     (dismiss)="dismissDraft($event)"
+    (startApplicationFromJob)="startApplicationFromJobRecord($event)"
+    (markJobNotFit)="markJobRecordNotFit($event)"
+    (openCvLibrary)="openCvLibrary()"
   />
 </oc-app-shell>
+}
+
+@if (guidedTourOpen()) {
+  <oc-guided-tour
+    [mode]="workspaceMode()"
+    (finish)="completeDemoGuide()"
+    (skip)="completeDemoGuide()"
+  />
+}
+
+@if (connectAiOpen()) {
+  <oc-connect-ai-modal (close)="closeConnectAi()" />
+}

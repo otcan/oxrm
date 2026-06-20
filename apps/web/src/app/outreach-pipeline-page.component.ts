@@ -1,29 +1,26 @@
 import { CommonModule } from "@angular/common";
 import { ChangeDetectionStrategy, Component, EventEmitter, Input, Output } from "@angular/core";
-import { FormsModule } from "@angular/forms";
-import { OutreachPipelineRow, ProductStageGroup } from "./models";
+import { FilterBarComponent } from "./filter-bar.component";
+import { FilterChange, FilterControl, OutreachPipelineRow, ProductStageGroup } from "./models";
 
 @Component({
   selector: "oc-outreach-pipeline-page",
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FilterBarComponent],
   template: `
-    <section class="page-toolbar">
-      <label>
-        Search
-        <input [ngModel]="search" (ngModelChange)="searchChange.emit($event)" name="pipelineSearch" placeholder="Name, company, role">
-      </label>
-      <label>
-        Stage
-        <select [ngModel]="stageFilter" (ngModelChange)="stageFilterChange.emit($event)" name="pipelineStage">
-          <option value="all">All stages</option>
-          @for (stage of stages; track stage) {
-            <option [value]="stage">{{ stage }}</option>
-          }
-        </select>
-      </label>
-      <button type="button" class="primary" (click)="add.emit()">+ Add lead</button>
-    </section>
+    <oc-filter-bar
+      [search]="search"
+      searchPlaceholder="Name, company, role"
+      [controls]="controls"
+      [total]="total"
+      [shown]="shown"
+      noun="leads"
+      primaryActionLabel="+ Add lead"
+      (searchChange)="searchChange.emit($event)"
+      (filterChange)="filterChange.emit($event)"
+      (clear)="clearFilters.emit()"
+      (primaryAction)="add.emit()"
+    />
 
     <section class="stage-board product-board" aria-label="Outreach pipeline">
       @for (group of groups; track group.label) {
@@ -40,7 +37,7 @@ import { OutreachPipelineRow, ProductStageGroup } from "./models";
                     <strong>{{ row['name'] }}</strong>
                     <span>{{ row['role'] }} at {{ row['company'] }}</span>
                   </div>
-                  <em>{{ row['stage'] }}</em>
+                  <em>{{ row['channel'] }}</em>
                 </div>
                 <p>Next: {{ row['nextAction'] }}</p>
                 <small>Last contact: {{ row['lastContact'] }}</small>
@@ -60,12 +57,14 @@ import { OutreachPipelineRow, ProductStageGroup } from "./models";
 })
 export class OutreachPipelinePageComponent {
   @Input() search = "";
-  @Input() stageFilter = "all";
-  @Input() stages: string[] = [];
+  @Input() controls: FilterControl[] = [];
+  @Input() total = 0;
+  @Input() shown = 0;
   @Input() groups: ProductStageGroup[] = [];
   @Input() selectedId = "";
   @Output() searchChange = new EventEmitter<string>();
-  @Output() stageFilterChange = new EventEmitter<string>();
+  @Output() filterChange = new EventEmitter<FilterChange>();
+  @Output() clearFilters = new EventEmitter<void>();
   @Output() add = new EventEmitter<void>();
   @Output() open = new EventEmitter<OutreachPipelineRow>();
 

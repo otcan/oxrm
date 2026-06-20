@@ -2,9 +2,15 @@ import { CommonModule } from "@angular/common";
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from "@angular/core";
 import { FormsModule } from "@angular/forms";
 import { Router } from "@angular/router";
+import { AddApplicationModalComponent } from "./add-application-modal.component";
+import { AddJobModalComponent } from "./add-job-modal.component";
 import { AppShellComponent } from "./app-shell.component";
 import { CrmApiService } from "./crm-api.service";
+import { ConnectAiModalComponent } from "./connect-ai-modal.component";
+import { CvLibraryModalComponent } from "./cv-library-modal.component";
+import { DemoWelcomePageComponent } from "./demo-welcome-page.component";
 import { DetailDrawerComponent } from "./detail-drawer.component";
+import { GuidedTourComponent } from "./guided-tour.component";
 import { JobApplicationsPageComponent } from "./job-applications-page.component";
 import { JobContactRow, JobContactsPageComponent } from "./job-contacts-page.component";
 import { JobJobsPageComponent } from "./job-jobs-page.component";
@@ -16,6 +22,8 @@ import { TodayPageComponent } from "./today-page.component";
 import {
   DetailSelection,
   EventRow,
+  FilterChange,
+  FilterControl,
   HealthResponse,
   LeadEditForm,
   LeadRow,
@@ -25,6 +33,7 @@ import {
   OutreachCompanyRow,
   OutreachPersonRow,
   OutreachPipelineRow,
+  PageResult,
   ProductActionItem,
   ProductStageGroup,
   TaskEditForm,
@@ -60,8 +69,14 @@ const OUTREACH_NAV: NavDefinition[] = [
   imports: [
     CommonModule,
     FormsModule,
+    AddApplicationModalComponent,
+    AddJobModalComponent,
     AppShellComponent,
+    ConnectAiModalComponent,
+    CvLibraryModalComponent,
+    DemoWelcomePageComponent,
     DetailDrawerComponent,
+    GuidedTourComponent,
     JobApplicationsPageComponent,
     JobContactsPageComponent,
     JobJobsPageComponent,
@@ -78,6 +93,7 @@ export class AppComponent {
   private readonly api = inject(CrmApiService);
   private readonly router = inject(Router);
 
+  readonly bootstrap = signal<WorkspaceBootstrap | null>(null);
   readonly workspaceMode = signal<WorkspaceMode>("job_search");
   readonly selectedNav = signal<NavItem>(this.inferInitialNav());
   readonly backupHealth = signal<"ok" | "degraded" | "optional">("optional");
@@ -90,6 +106,7 @@ export class AppComponent {
   readonly jobJobs = signal<ViewRunResult | null>(null);
   readonly jobInterviews = signal<ViewRunResult | null>(null);
   readonly jobContacts = signal<XrmRecord[]>([]);
+  readonly cvRecords = signal<XrmRecord[]>([]);
   readonly outreachLeadRecords = signal<XrmRecord[]>([]);
   readonly outreachPeopleRecords = signal<XrmRecord[]>([]);
   readonly outreachCompanyRecords = signal<XrmRecord[]>([]);
@@ -100,15 +117,49 @@ export class AppComponent {
   readonly saving = signal(false);
   readonly saveError = signal<string | null>(null);
   readonly recordCreateOpen = signal(false);
+  readonly addApplicationOpen = signal(false);
+  readonly addJobOpen = signal(false);
+  readonly cvLibraryOpen = signal(false);
+  readonly connectAiOpen = signal(false);
+  readonly demoWelcomeOpen = signal(false);
+  readonly guidedTourOpen = signal(false);
+  readonly applicationPrefill = signal<Record<string, string> | null>(null);
   readonly recordForm = signal<Record<string, string>>({});
   readonly selectedRecordObjectType = signal<string | null>(null);
   readonly applicationSearch = signal("");
-  readonly applicationStageFilter = signal("all");
+  readonly applicationTimeFilter = signal("any");
+  readonly applicationCompanyFilter = signal("all");
+  readonly applicationMatchFilter = signal("all");
+  readonly applicationCvFilter = signal("any");
+  readonly applicationContactFilter = signal("any");
+  readonly applicationSourceFilter = signal("all");
+  readonly applicationShowClosedFilter = signal("no");
+  readonly applicationShowNotFitFilter = signal("no");
+  readonly applicationSort = signal("next_action");
   readonly jobSearch = signal("");
+  readonly jobDateFilter = signal("any");
+  readonly jobCompanyFilter = signal("all");
+  readonly jobSourceFilter = signal("all");
   readonly jobMatchFilter = signal("all");
+  readonly jobApplicationStatusFilter = signal("all");
+  readonly jobLocationFilter = signal("all");
+  readonly jobRemoteOnlyFilter = signal("any");
+  readonly jobCvAssessedFilter = signal("any");
+  readonly jobHasContactFilter = signal("any");
+  readonly jobSort = signal("newest");
+  readonly jobPage = signal(1);
+  readonly jobPageSize = signal(25);
   readonly contactSearch = signal("");
   readonly pipelineSearch = signal("");
-  readonly pipelineStageFilter = signal("all");
+  readonly pipelineLastContactFilter = signal("any");
+  readonly pipelineNextActionFilter = signal("any");
+  readonly pipelineCompanyFilter = signal("all");
+  readonly pipelineChannelFilter = signal("all");
+  readonly pipelineWaitingFilter = signal("any");
+  readonly pipelineDraftFilter = signal("any");
+  readonly pipelineNeedsReviewFilter = signal("any");
+  readonly pipelineShowClosedFilter = signal("no");
+  readonly pipelineSort = signal("overdue");
   readonly peopleSearch = signal("");
   readonly companySearch = signal("");
   readonly pendingRecordId = signal(this.inferInitialRecordId());
@@ -145,7 +196,7 @@ export class AppComponent {
         nextAction: "Next action",
         activity: "Communication"
       },
-      stages: ["Saved", "Preparing", "Applied", "Interviewing", "Closed"],
+      stages: ["Saved", "Preparing", "Applied", "Interviewing", "Not a fit", "Closed"],
       routes: {
         Today: "/today",
         Applications: "/applications",
@@ -181,31 +232,280 @@ export class AppComponent {
 
   readonly filteredApplicationRows = computed(() => {
     const query = this.applicationSearch().trim().toLowerCase();
-    const stage = this.applicationStageFilter();
-    return this.jobApplicationRows().filter((row) => {
+    const filtered = this.jobApplicationRows().filter((row) => {
       const stageBucket = this.applicationStageBucket(row["stage"]);
-      const matchesStage = stage === "all" || stageBucket === stage;
       const text = `${this.rowText(row, "role")} ${this.rowText(row, "company")} ${this.rowText(row, "responsiblePerson")}`.toLowerCase();
-      return matchesStage && (!query || text.includes(query));
+      if (query && !text.includes(query)) return false;
+      if (!this.matchesTimeFilter(row, this.applicationTimeFilter())) return false;
+      if (!this.matchesTextFilter(this.rowText(row, "company", ""), this.applicationCompanyFilter())) return false;
+      if (this.applicationMatchFilter() !== "all" && this.matchBucket(row) !== this.applicationMatchFilter()) return false;
+      if (this.applicationCvFilter() === "attached" && !this.rowText(row, "cvVersion", "")) return false;
+      if (this.applicationCvFilter() === "missing" && this.rowText(row, "cvVersion", "")) return false;
+      if (this.applicationContactFilter() === "assigned" && !this.rowText(row, "responsiblePerson", "")) return false;
+      if (!this.matchesTextFilter(this.rowText(row, "source", this.rowText(row, "platform", "")), this.applicationSourceFilter())) return false;
+      if (this.applicationShowClosedFilter() !== "yes" && stageBucket === "Closed") return false;
+      if (this.applicationShowNotFitFilter() !== "yes" && stageBucket === "Not a fit") return false;
+      return true;
     });
+    return this.sortApplications(filtered, this.applicationSort());
   });
 
   readonly applicationStageGroups = computed<ProductStageGroup[]>(() => {
     const rows = this.filteredApplicationRows();
-    return ["Saved", "Preparing", "Applied", "Interviewing", "Closed"].map((label) => ({
+    return this.uiConfig().stages.map((label) => ({
       label,
       rows: rows.filter((row) => this.applicationStageBucket(row["stage"]) === label)
     }));
   });
 
+  readonly applicationFilterControls = computed<FilterControl[]>(() => [
+    {
+      key: "updated",
+      label: "Time",
+      value: this.applicationTimeFilter(),
+      defaultValue: "any",
+      options: [
+        { value: "any", label: "Any time" },
+        { value: "today", label: "Needs action today" },
+        { value: "7d", label: "Updated in last 7 days" },
+        { value: "30d", label: "Updated in last 30 days" }
+      ]
+    },
+    {
+      key: "company",
+      label: "Company",
+      value: this.applicationCompanyFilter(),
+      defaultValue: "all",
+      options: this.optionList("Any company", this.jobApplicationRows().map((row) => this.rowText(row, "company", "")))
+    },
+    {
+      key: "match",
+      label: "Match",
+      value: this.applicationMatchFilter(),
+      defaultValue: "all",
+      options: [
+        { value: "all", label: "Any match" },
+        { value: "strong", label: "Strong" },
+        { value: "possible", label: "Possible" },
+        { value: "weak", label: "Weak" },
+        { value: "not", label: "Not assessed" }
+      ]
+    },
+    {
+      key: "cv",
+      label: "CV",
+      value: this.applicationCvFilter(),
+      defaultValue: "any",
+      options: [
+        { value: "any", label: "Any" },
+        { value: "attached", label: "CV attached" },
+        { value: "missing", label: "CV missing" }
+      ]
+    },
+    {
+      key: "contact",
+      label: "Contact assigned",
+      value: this.applicationContactFilter(),
+      defaultValue: "any",
+      more: true,
+      options: [
+        { value: "any", label: "Any" },
+        { value: "assigned", label: "Contact assigned" }
+      ]
+    },
+    {
+      key: "source",
+      label: "Source",
+      value: this.applicationSourceFilter(),
+      defaultValue: "all",
+      more: true,
+      options: this.optionList("Any source", this.jobApplicationRows().map((row) => this.rowText(row, "source", this.rowText(row, "platform", ""))))
+    },
+    {
+      key: "closed",
+      label: "Show closed",
+      value: this.applicationShowClosedFilter(),
+      defaultValue: "no",
+      more: true,
+      options: [
+        { value: "no", label: "Hide closed" },
+        { value: "yes", label: "Show closed" }
+      ]
+    },
+    {
+      key: "not_fit",
+      label: "Show not a fit",
+      value: this.applicationShowNotFitFilter(),
+      defaultValue: "no",
+      more: true,
+      options: [
+        { value: "no", label: "Hide not a fit" },
+        { value: "yes", label: "Show not a fit" }
+      ]
+    },
+    {
+      key: "sort",
+      label: "Sort",
+      value: this.applicationSort(),
+      defaultValue: "next_action",
+      more: true,
+      options: [
+        { value: "next_action", label: "Next action due" },
+        { value: "updated", label: "Recently updated" },
+        { value: "company", label: "Company" },
+        { value: "newest", label: "Newest" }
+      ]
+    }
+  ]);
+
   readonly filteredJobRows = computed(() => {
     const query = this.jobSearch().trim().toLowerCase();
-    const match = this.jobMatchFilter();
-    return this.jobRows().filter((row) => {
+    const filtered = this.jobRows().filter((row) => {
       const text = `${this.rowText(row, "title")} ${this.rowText(row, "company")} ${this.rowText(row, "location")} ${this.rowText(row, "platform")}`.toLowerCase();
-      const matchBucket = this.matchBucket(row);
-      return (!query || text.includes(query)) && (match === "all" || matchBucket === match);
+      if (query && !text.includes(query)) return false;
+      if (!this.matchesDateAdded(row, this.jobDateFilter())) return false;
+      if (!this.matchesTextFilter(this.rowText(row, "company", ""), this.jobCompanyFilter())) return false;
+      if (!this.matchesTextFilter(this.rowText(row, "platform", this.rowText(row, "source", "")), this.jobSourceFilter())) return false;
+      if (this.jobMatchFilter() !== "all" && this.matchBucket(row) !== this.jobMatchFilter()) return false;
+      if (this.jobApplicationStatusFilter() !== "all" && this.applicationStageBucket(row["applicationStage"]) !== this.jobApplicationStatusFilter()) return false;
+      if (!this.matchesTextFilter(this.rowText(row, "location", ""), this.jobLocationFilter())) return false;
+      if (this.jobRemoteOnlyFilter() === "remote" && !this.rowText(row, "location", "").toLowerCase().includes("remote")) return false;
+      if (this.jobCvAssessedFilter() === "yes" && this.matchBucket(row) === "not") return false;
+      if (this.jobHasContactFilter() === "yes" && !this.rowText(row, "responsiblePerson", this.rowText(row, "contact", ""))) return false;
+      return true;
     });
+    return this.sortJobs(filtered, this.jobSort());
+  });
+
+  readonly jobFilterControls = computed<FilterControl[]>(() => [
+    {
+      key: "date",
+      label: "Date added",
+      value: this.jobDateFilter(),
+      defaultValue: "any",
+      options: [
+        { value: "any", label: "Any date" },
+        { value: "today", label: "Today" },
+        { value: "7d", label: "Last 7 days" },
+        { value: "30d", label: "Last 30 days" }
+      ]
+    },
+    {
+      key: "company",
+      label: "Company",
+      value: this.jobCompanyFilter(),
+      defaultValue: "all",
+      options: this.optionList("Any company", this.jobRows().map((row) => this.rowText(row, "company", "")))
+    },
+    {
+      key: "source",
+      label: "Source",
+      value: this.jobSourceFilter(),
+      defaultValue: "all",
+      options: this.optionList("Any source", this.jobRows().map((row) => this.rowText(row, "platform", this.rowText(row, "source", ""))))
+    },
+    {
+      key: "match",
+      label: "Match",
+      value: this.jobMatchFilter(),
+      defaultValue: "all",
+      options: [
+        { value: "all", label: "Any match" },
+        { value: "strong", label: "Strong" },
+        { value: "possible", label: "Possible" },
+        { value: "weak", label: "Weak" },
+        { value: "not", label: "Not assessed" }
+      ]
+    },
+    {
+      key: "status",
+      label: "Application status",
+      value: this.jobApplicationStatusFilter(),
+      defaultValue: "all",
+      options: [
+        { value: "all", label: "Any status" },
+        { value: "Saved", label: "Not started" },
+        { value: "Preparing", label: "Preparing" },
+        { value: "Applied", label: "Applied" },
+        { value: "Interviewing", label: "Interviewing" },
+        { value: "Not a fit", label: "Not a fit" },
+        { value: "Closed", label: "Closed" }
+      ]
+    },
+    {
+      key: "location",
+      label: "Location",
+      value: this.jobLocationFilter(),
+      defaultValue: "all",
+      more: true,
+      options: this.optionList("Any location", this.jobRows().map((row) => this.rowText(row, "location", "")))
+    },
+    {
+      key: "remote",
+      label: "Remote only",
+      value: this.jobRemoteOnlyFilter(),
+      defaultValue: "any",
+      more: true,
+      options: [
+        { value: "any", label: "Any" },
+        { value: "remote", label: "Remote only" }
+      ]
+    },
+    {
+      key: "cv_match",
+      label: "CV match assessed",
+      value: this.jobCvAssessedFilter(),
+      defaultValue: "any",
+      more: true,
+      options: [
+        { value: "any", label: "Any" },
+        { value: "yes", label: "Assessed" }
+      ]
+    },
+    {
+      key: "contact",
+      label: "Has contact",
+      value: this.jobHasContactFilter(),
+      defaultValue: "any",
+      more: true,
+      options: [
+        { value: "any", label: "Any" },
+        { value: "yes", label: "Has contact" }
+      ]
+    },
+    {
+      key: "sort",
+      label: "Sort",
+      value: this.jobSort(),
+      defaultValue: "newest",
+      more: true,
+      options: [
+        { value: "newest", label: "Newest first" },
+        { value: "best_match", label: "Best match" },
+        { value: "company", label: "Company" },
+        { value: "updated", label: "Recently updated" }
+      ]
+    }
+  ]);
+
+  readonly jobPageResult = computed<PageResult<Record<string, unknown>>>(() => {
+    const rows = this.filteredJobRows();
+    const pageSize = this.jobPageSize();
+    const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
+    const page = Math.min(Math.max(1, this.jobPage()), pageCount);
+    const startIndex = (page - 1) * pageSize;
+    const items = rows.slice(startIndex, startIndex + pageSize);
+    return {
+      items,
+      total: this.jobRows().length,
+      shown: rows.length,
+      page,
+      pageSize,
+      pageCount,
+      start: rows.length ? startIndex + 1 : 0,
+      end: startIndex + items.length,
+      hasNext: page < pageCount
+    };
   });
 
   readonly contactRows = computed<JobContactRow[]>(() => {
@@ -281,11 +581,20 @@ export class AppComponent {
 
   readonly filteredOutreachPipelineRows = computed(() => {
     const query = this.pipelineSearch().trim().toLowerCase();
-    const stage = this.pipelineStageFilter();
-    return this.outreachPipelineRows().filter((row) => {
+    const filtered = this.outreachPipelineRows().filter((row) => {
       const text = `${row.name} ${row.company} ${row.role} ${row.nextAction}`.toLowerCase();
-      return (stage === "all" || row.stage === stage) && (!query || text.includes(query));
+      if (query && !text.includes(query)) return false;
+      if (!this.matchesLastContact(row, this.pipelineLastContactFilter())) return false;
+      if (!this.matchesNextAction(row, this.pipelineNextActionFilter())) return false;
+      if (!this.matchesTextFilter(row.company, this.pipelineCompanyFilter())) return false;
+      if (!this.matchesTextFilter(row.channel, this.pipelineChannelFilter())) return false;
+      if (this.pipelineWaitingFilter() === "yes" && row.stage !== "Contacted") return false;
+      if (this.pipelineDraftFilter() === "yes" && this.recordField(row.record, "draftStatus", "") !== "proposed") return false;
+      if (this.pipelineNeedsReviewFilter() === "yes" && !row.badges.includes("Needs review")) return false;
+      if (this.pipelineShowClosedFilter() !== "yes" && row.stage === "Closed") return false;
+      return true;
     });
+    return this.sortOutreachRows(filtered, this.pipelineSort());
   });
 
   readonly outreachPipelineGroups = computed<ProductStageGroup[]>(() => {
@@ -295,6 +604,106 @@ export class AppComponent {
       rows: rows.filter((row) => row.stage === label)
     }));
   });
+
+  readonly outreachPipelineFilterControls = computed<FilterControl[]>(() => [
+    {
+      key: "last_contacted",
+      label: "Last contacted",
+      value: this.pipelineLastContactFilter(),
+      defaultValue: "any",
+      options: [
+        { value: "any", label: "Any time" },
+        { value: "today", label: "Today" },
+        { value: "7d", label: "Last 7 days" },
+        { value: "30d", label: "Last 30 days" },
+        { value: "never", label: "Never contacted" }
+      ]
+    },
+    {
+      key: "next_action",
+      label: "Next action",
+      value: this.pipelineNextActionFilter(),
+      defaultValue: "any",
+      options: [
+        { value: "any", label: "Any" },
+        { value: "overdue", label: "Overdue" },
+        { value: "today", label: "Today" },
+        { value: "week", label: "This week" },
+        { value: "none", label: "No next action" }
+      ]
+    },
+    {
+      key: "company",
+      label: "Company",
+      value: this.pipelineCompanyFilter(),
+      defaultValue: "all",
+      options: this.optionList("Any company", this.outreachPipelineRows().map((row) => row.company))
+    },
+    {
+      key: "channel",
+      label: "Channel",
+      value: this.pipelineChannelFilter(),
+      defaultValue: "all",
+      options: this.optionList("Any channel", this.outreachPipelineRows().map((row) => row.channel))
+    },
+    {
+      key: "waiting",
+      label: "Waiting for reply",
+      value: this.pipelineWaitingFilter(),
+      defaultValue: "any",
+      more: true,
+      options: [
+        { value: "any", label: "Any" },
+        { value: "yes", label: "Waiting for reply" }
+      ]
+    },
+    {
+      key: "draft",
+      label: "Draft available",
+      value: this.pipelineDraftFilter(),
+      defaultValue: "any",
+      more: true,
+      options: [
+        { value: "any", label: "Any" },
+        { value: "yes", label: "Draft available" }
+      ]
+    },
+    {
+      key: "review",
+      label: "Needs review",
+      value: this.pipelineNeedsReviewFilter(),
+      defaultValue: "any",
+      more: true,
+      options: [
+        { value: "any", label: "Any" },
+        { value: "yes", label: "Needs review" }
+      ]
+    },
+    {
+      key: "closed",
+      label: "Show closed",
+      value: this.pipelineShowClosedFilter(),
+      defaultValue: "no",
+      more: true,
+      options: [
+        { value: "no", label: "Hide closed" },
+        { value: "yes", label: "Show closed" }
+      ]
+    },
+    {
+      key: "sort",
+      label: "Sort",
+      value: this.pipelineSort(),
+      defaultValue: "overdue",
+      more: true,
+      options: [
+        { value: "overdue", label: "Overdue next action" },
+        { value: "next_action", label: "Next action date" },
+        { value: "last_contacted", label: "Last contacted" },
+        { value: "name", label: "Name" }
+      ]
+    }
+  ]);
 
   readonly outreachPeopleRows = computed<OutreachPersonRow[]>(() => {
     const leads = this.outreachPipelineRows();
@@ -394,7 +803,10 @@ export class AppComponent {
   readonly jobTodayActions = computed<ProductActionItem[]>(() => {
     const taskItems = this.visibleQueue().map((task) => this.taskActionItem(task));
     const applicationItems = this.jobApplicationRows()
-      .filter((row) => this.rowText(row, "nextActionAt") !== "-")
+      .filter((row) => {
+        const stage = this.applicationStageBucket(row["stage"]);
+        return this.rowText(row, "nextActionAt") !== "-" && stage !== "Closed" && stage !== "Not a fit";
+      })
       .map((row) => ({
         kind: "application" as const,
         id: this.rowText(row, "id"),
@@ -404,7 +816,19 @@ export class AppComponent {
         sortDate: this.sortDate(row["nextActionAt"]),
         sortBucket: this.dueBucket(row["nextActionAt"])
       }));
-    return this.sortedUniqueActions([...taskItems, ...applicationItems]).slice(0, 5);
+    const missingCvItems = this.jobApplicationRows()
+      .filter((row) => this.applicationStageBucket(row["stage"]) === "Preparing" && !this.rowText(row, "cvVersion", ""))
+      .map((row) => ({
+        kind: "application" as const,
+        id: this.rowText(row, "id"),
+        title: `Choose a CV for ${this.rowText(row, "company")} ${this.rowText(row, "role")}`,
+        context: `${this.rowText(row, "role")} at ${this.rowText(row, "company")}`,
+        dueAt: typeof row["nextActionAt"] === "string" ? row["nextActionAt"] : null,
+        badge: "CV missing",
+        sortDate: this.sortDate(row["nextActionAt"]),
+        sortBucket: 0
+      }));
+    return this.sortedUniqueActions([...taskItems, ...missingCvItems, ...applicationItems]).slice(0, 5);
   });
 
   readonly outreachTodayActions = computed<ProductActionItem[]>(() => {
@@ -465,7 +889,7 @@ export class AppComponent {
       },
       {
         label: "Active applications",
-        value: String(this.jobApplicationRows().filter((row) => this.applicationStageBucket(row["stage"]) !== "Closed").length),
+        value: String(this.jobApplicationRows().filter((row) => !["Closed", "Not a fit"].includes(this.applicationStageBucket(row["stage"]))).length),
         tone: "neutral"
       },
       {
@@ -486,7 +910,7 @@ export class AppComponent {
   readonly applicationCounts = computed(() => {
     const rows = this.jobApplicationRows();
     return {
-      active: rows.filter((row) => this.applicationStageBucket(row["stage"]) !== "Closed").length,
+      active: rows.filter((row) => !["Closed", "Not a fit"].includes(this.applicationStageBucket(row["stage"]))).length,
       waiting: rows.filter((row) => String(row["stage"] ?? "").toLowerCase().includes("applied")).length,
       interviewing: rows.filter((row) => this.applicationStageBucket(row["stage"]) === "Interviewing").length
     };
@@ -544,14 +968,25 @@ export class AppComponent {
   });
 
   constructor() {
+    this.loadFiltersFromUrl();
+    if (typeof window !== "undefined") {
+      window.addEventListener("popstate", () => {
+        this.selectedNav.set(this.inferInitialNav());
+        this.loadFiltersFromUrl();
+        this.applyDocumentMetadata();
+      });
+    }
     this.applyWorkspaceModeMetadata(this.workspaceMode());
     void this.refresh();
   }
 
   async refresh() {
-    const bootstrap = await this.api.workspaceBootstrap().catch(() => this.fallbackBootstrap());
+    const bootstrap = this.normalizeBootstrap(await this.api.workspaceBootstrap().catch(() => this.fallbackBootstrap()));
+    this.bootstrap.set(bootstrap);
     this.workspaceMode.set(bootstrap.mode);
     this.applyWorkspaceModeMetadata(bootstrap.mode);
+    this.applyDocumentMetadata();
+    this.initializeDemoGuide(bootstrap);
     this.ensureAllowedNav();
 
     const templateKey = bootstrap.templateKey;
@@ -566,6 +1001,7 @@ export class AppComponent {
       jobJobs,
       jobInterviews,
       jobContacts,
+      cvRecords,
       outreachLeads,
       outreachPeople,
       outreachCompanies
@@ -580,6 +1016,7 @@ export class AppComponent {
       templateKey === "job_search" ? this.api.runView("job_search.jobs").catch(() => null) : Promise.resolve(null),
       templateKey === "job_search" ? this.api.runView("job_search.interviews").catch(() => null) : Promise.resolve(null),
       templateKey === "job_search" ? this.api.listXrmRecords({ objectType: "job_contact", limit: 100 }).catch(() => []) : Promise.resolve([]),
+      templateKey === "job_search" ? this.api.listXrmRecords({ objectType: "cv_version", limit: 100 }).catch(() => []) : Promise.resolve([]),
       this.api.listXrmRecords({ objectType: "lead", limit: 100 }).catch(() => []),
       this.api.listXrmRecords({ objectType: "person", limit: 100 }).catch(() => []),
       this.api.listXrmRecords({ objectType: "company", limit: 100 }).catch(() => [])
@@ -595,6 +1032,7 @@ export class AppComponent {
     this.jobJobs.set(jobJobs);
     this.jobInterviews.set(jobInterviews);
     this.jobContacts.set(jobContacts);
+    this.cvRecords.set(cvRecords.filter((record) => this.recordBelongsToMode(record, "job_search")));
     this.outreachLeadRecords.set(outreachLeads.filter((record) => this.recordBelongsToMode(record, "outreach")));
     this.outreachPeopleRecords.set(outreachPeople.filter((record) => this.recordBelongsToMode(record, "outreach")));
     this.outreachCompanyRecords.set(outreachCompanies.filter((record) => this.recordBelongsToMode(record, "outreach")));
@@ -616,6 +1054,7 @@ export class AppComponent {
       item = "Today";
     }
     this.selectedNav.set(item);
+    this.applyDocumentMetadata();
     void this.navigateToNav(item);
   }
 
@@ -628,6 +1067,14 @@ export class AppComponent {
   }
 
   startCreateRecord(slug: string) {
+    if (slug === "application") {
+      this.startCreateApplication();
+      return;
+    }
+    if (slug === "job") {
+      this.startCreateJob();
+      return;
+    }
     this.selectedRecordObjectType.set(slug);
     this.openCreateRecord();
   }
@@ -877,18 +1324,86 @@ export class AppComponent {
 
   setApplicationSearch(value: string) {
     this.applicationSearch.set(value);
+    this.syncUrlForCurrentNav();
   }
 
-  setApplicationStageFilter(value: string) {
-    this.applicationStageFilter.set(value);
+  setApplicationFilter(change: FilterChange) {
+    this.setFilterSignal(change.key, change.value, {
+      updated: this.applicationTimeFilter,
+      company: this.applicationCompanyFilter,
+      match: this.applicationMatchFilter,
+      cv: this.applicationCvFilter,
+      contact: this.applicationContactFilter,
+      source: this.applicationSourceFilter,
+      closed: this.applicationShowClosedFilter,
+      not_fit: this.applicationShowNotFitFilter,
+      sort: this.applicationSort
+    });
+    this.syncUrlForCurrentNav();
+  }
+
+  clearApplicationFilters() {
+    this.applicationSearch.set("");
+    this.applicationTimeFilter.set("any");
+    this.applicationCompanyFilter.set("all");
+    this.applicationMatchFilter.set("all");
+    this.applicationCvFilter.set("any");
+    this.applicationContactFilter.set("any");
+    this.applicationSourceFilter.set("all");
+    this.applicationShowClosedFilter.set("no");
+    this.applicationShowNotFitFilter.set("no");
+    this.applicationSort.set("next_action");
+    this.syncUrlForCurrentNav();
   }
 
   setJobSearch(value: string) {
     this.jobSearch.set(value);
+    this.jobPage.set(1);
+    this.syncUrlForCurrentNav();
   }
 
-  setJobMatchFilter(value: string) {
-    this.jobMatchFilter.set(value);
+  setJobFilter(change: FilterChange) {
+    this.setFilterSignal(change.key, change.value, {
+      date: this.jobDateFilter,
+      company: this.jobCompanyFilter,
+      source: this.jobSourceFilter,
+      match: this.jobMatchFilter,
+      status: this.jobApplicationStatusFilter,
+      location: this.jobLocationFilter,
+      remote: this.jobRemoteOnlyFilter,
+      cv_match: this.jobCvAssessedFilter,
+      contact: this.jobHasContactFilter,
+      sort: this.jobSort
+    });
+    this.jobPage.set(1);
+    this.syncUrlForCurrentNav();
+  }
+
+  clearJobFilters() {
+    this.jobSearch.set("");
+    this.jobDateFilter.set("any");
+    this.jobCompanyFilter.set("all");
+    this.jobSourceFilter.set("all");
+    this.jobMatchFilter.set("all");
+    this.jobApplicationStatusFilter.set("all");
+    this.jobLocationFilter.set("all");
+    this.jobRemoteOnlyFilter.set("any");
+    this.jobCvAssessedFilter.set("any");
+    this.jobHasContactFilter.set("any");
+    this.jobSort.set("newest");
+    this.jobPage.set(1);
+    this.syncUrlForCurrentNav();
+  }
+
+  setJobPage(value: number) {
+    this.jobPage.set(Math.max(1, value));
+    this.syncUrlForCurrentNav();
+  }
+
+  setJobPageSize(value: number) {
+    this.jobPageSize.set(value || 25);
+    this.jobPage.set(1);
+    this.syncUrlForCurrentNav();
   }
 
   setContactSearch(value: string) {
@@ -897,10 +1412,36 @@ export class AppComponent {
 
   setPipelineSearch(value: string) {
     this.pipelineSearch.set(value);
+    this.syncUrlForCurrentNav();
   }
 
-  setPipelineStageFilter(value: string) {
-    this.pipelineStageFilter.set(value);
+  setPipelineFilter(change: FilterChange) {
+    this.setFilterSignal(change.key, change.value, {
+      last_contacted: this.pipelineLastContactFilter,
+      next_action: this.pipelineNextActionFilter,
+      company: this.pipelineCompanyFilter,
+      channel: this.pipelineChannelFilter,
+      waiting: this.pipelineWaitingFilter,
+      draft: this.pipelineDraftFilter,
+      review: this.pipelineNeedsReviewFilter,
+      closed: this.pipelineShowClosedFilter,
+      sort: this.pipelineSort
+    });
+    this.syncUrlForCurrentNav();
+  }
+
+  clearPipelineFilters() {
+    this.pipelineSearch.set("");
+    this.pipelineLastContactFilter.set("any");
+    this.pipelineNextActionFilter.set("any");
+    this.pipelineCompanyFilter.set("all");
+    this.pipelineChannelFilter.set("all");
+    this.pipelineWaitingFilter.set("any");
+    this.pipelineDraftFilter.set("any");
+    this.pipelineNeedsReviewFilter.set("any");
+    this.pipelineShowClosedFilter.set("no");
+    this.pipelineSort.set("overdue");
+    this.syncUrlForCurrentNav();
   }
 
   setPeopleSearch(value: string) {
@@ -909,6 +1450,128 @@ export class AppComponent {
 
   setCompanySearch(value: string) {
     this.companySearch.set(value);
+  }
+
+  openCvLibrary() {
+    this.cvLibraryOpen.set(true);
+  }
+
+  closeCvLibrary() {
+    this.cvLibraryOpen.set(false);
+  }
+
+  async openCvRecord(record: XrmRecord) {
+    this.closeCvLibrary();
+    await this.selectRecordById(record.id);
+  }
+
+  openConnectAi() {
+    this.connectAiOpen.set(true);
+  }
+
+  closeConnectAi() {
+    this.connectAiOpen.set(false);
+  }
+
+  showGuidedTour() {
+    this.demoWelcomeOpen.set(false);
+    this.guidedTourOpen.set(true);
+    this.selectNav(this.workspaceMode() === "outreach" ? "Pipeline" : "Jobs");
+  }
+
+  completeDemoGuide() {
+    this.persistDemoGuideCompletion();
+    this.demoWelcomeOpen.set(false);
+    this.guidedTourOpen.set(false);
+    this.selectNav("Today");
+  }
+
+  exploreSampleData() {
+    this.persistDemoGuideCompletion();
+    this.demoWelcomeOpen.set(false);
+    this.guidedTourOpen.set(false);
+    this.selectNav("Today");
+  }
+
+  startCreateApplication(prefill: Record<string, string> | null = null) {
+    this.applicationPrefill.set(prefill);
+    this.addApplicationOpen.set(true);
+  }
+
+  startCreateJob() {
+    this.addJobOpen.set(true);
+  }
+
+  closeAddApplication() {
+    this.addApplicationOpen.set(false);
+    this.applicationPrefill.set(null);
+    this.saveError.set(null);
+  }
+
+  closeAddJob() {
+    this.addJobOpen.set(false);
+    this.saveError.set(null);
+  }
+
+  async createApplicationRecord(fields: Record<string, string>) {
+    const normalized = this.normalizeDateFields(fields, ["applicationDate", "nextActionAt"]);
+    const displayName = `${normalized["role"] || "Application"} at ${normalized["company"] || "Company"}`;
+    await this.createSpecializedRecord("application", displayName, normalized);
+    this.closeAddApplication();
+  }
+
+  async createJobRecord(fields: Record<string, string>) {
+    const normalized = this.normalizeDateFields(fields, ["publishedAt", "discoveredAt"]);
+    const displayName = `${normalized["title"] || "Job"} at ${normalized["company"] || "Company"}`;
+    await this.createSpecializedRecord("job", displayName, {
+      ...normalized,
+      applicationStage: normalized["applicationStage"] || "not_started"
+    });
+    this.closeAddJob();
+  }
+
+  async startApplicationFromJob(row: Record<string, unknown>) {
+    this.startCreateApplication({
+      role: this.rowText(row, "title", ""),
+      company: this.rowText(row, "company", ""),
+      jobUrl: this.rowText(row, "url", ""),
+      stage: "Preparing",
+      nextAction: "Choose CV and prepare application packet",
+      nextActionAt: new Date().toISOString().slice(0, 10)
+    });
+  }
+
+  async startApplicationFromJobRecord(record: XrmRecord) {
+    this.startCreateApplication({
+      role: this.recordField(record, "title", record.displayName),
+      company: this.recordField(record, "company", ""),
+      jobUrl: this.recordField(record, "url", ""),
+      stage: "Preparing",
+      nextAction: "Choose CV and prepare application packet",
+      nextActionAt: new Date().toISOString().slice(0, 10)
+    });
+  }
+
+  async markJobNotFit(row: Record<string, unknown>) {
+    const id = typeof row["id"] === "string" ? row["id"] : undefined;
+    if (!id) return;
+    const reason = this.askNotFitReason();
+    if (reason === null) return;
+    const record = await this.api.getXrmRecord(id);
+    await this.updateRecordFields(record, { applicationStage: "Not a fit", notFitReason: reason });
+  }
+
+  async markJobRecordNotFit(record: XrmRecord) {
+    const reason = this.askNotFitReason();
+    if (reason === null) return;
+    await this.updateRecordFields(record, { applicationStage: "Not a fit", notFitReason: reason });
+  }
+
+  async saveJobForLater(row: Record<string, unknown>) {
+    const id = typeof row["id"] === "string" ? row["id"] : undefined;
+    if (!id) return;
+    const record = await this.api.getXrmRecord(id);
+    await this.updateRecordFields(record, { applicationStage: "saved" });
   }
 
   rowText(row: Record<string, unknown>, key: string, fallback = "-") {
@@ -924,6 +1587,7 @@ export class AppComponent {
 
   applicationStageBucket(value: unknown) {
     const stage = String(value || "").toLowerCase();
+    if (stage.includes("not a fit") || stage.includes("not_fit") || stage.includes("not-a-fit") || stage.includes("pass") || stage.includes("skip")) return "Not a fit";
     if (stage.includes("reject") || stage.includes("archive") || stage.includes("closed")) return "Closed";
     if (stage.includes("interview") || stage.includes("intro")) return "Interviewing";
     if (stage.includes("applied") || stage.includes("waiting")) return "Applied";
@@ -937,6 +1601,87 @@ export class AppComponent {
     if (value >= 85) return "strong";
     if (value >= 65) return "possible";
     return "weak";
+  }
+
+  optionList(defaultLabel: string, values: string[]) {
+    const unique = [...new Set(values.map((value) => value.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    return [{ value: "all", label: defaultLabel }, ...unique.map((value) => ({ value, label: value }))];
+  }
+
+  matchesTextFilter(value: string, filter: string) {
+    return filter === "all" || value.toLowerCase() === filter.toLowerCase();
+  }
+
+  matchesTimeFilter(row: Record<string, unknown>, filter: string) {
+    if (filter === "any") return true;
+    const value = filter === "today" ? row["nextActionAt"] : row["updatedAt"] ?? row["lastTouchAt"] ?? row["nextActionAt"];
+    return this.matchesDateWindow(value, filter);
+  }
+
+  matchesDateAdded(row: Record<string, unknown>, filter: string) {
+    if (filter === "any") return true;
+    return this.matchesDateWindow(row["discoveredAt"] ?? row["publishedAt"] ?? row["createdAt"], filter);
+  }
+
+  matchesDateWindow(value: unknown, filter: string) {
+    const timestamp = this.sortDate(value);
+    if (timestamp === Number.MAX_SAFE_INTEGER) return false;
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    if (filter === "today") {
+      return timestamp >= start && timestamp < start + 86_400_000;
+    }
+    if (filter === "7d") {
+      return timestamp >= Date.now() - 7 * 86_400_000;
+    }
+    if (filter === "30d") {
+      return timestamp >= Date.now() - 30 * 86_400_000;
+    }
+    return true;
+  }
+
+  sortApplications(rows: ViewRow[], sort: string) {
+    return [...rows].sort((left, right) => {
+      if (sort === "company") return this.rowText(left, "company").localeCompare(this.rowText(right, "company"));
+      if (sort === "newest") return this.sortDate(right["createdAt"] ?? right["updatedAt"]) - this.sortDate(left["createdAt"] ?? left["updatedAt"]);
+      if (sort === "updated") return this.sortDate(right["updatedAt"] ?? right["lastTouchAt"]) - this.sortDate(left["updatedAt"] ?? left["lastTouchAt"]);
+      return this.sortDate(left["nextActionAt"]) - this.sortDate(right["nextActionAt"]);
+    });
+  }
+
+  sortJobs(rows: ViewRow[], sort: string) {
+    return [...rows].sort((left, right) => {
+      if (sort === "best_match") return Number(right["fitRate"] ?? 0) - Number(left["fitRate"] ?? 0);
+      if (sort === "company") return this.rowText(left, "company").localeCompare(this.rowText(right, "company"));
+      if (sort === "updated") return this.sortDate(right["updatedAt"] ?? right["lastTouchAt"]) - this.sortDate(left["updatedAt"] ?? left["lastTouchAt"]);
+      return this.sortDate(right["discoveredAt"] ?? right["publishedAt"] ?? right["createdAt"]) - this.sortDate(left["discoveredAt"] ?? left["publishedAt"] ?? left["createdAt"]);
+    });
+  }
+
+  matchesLastContact(row: OutreachPipelineRow, filter: string) {
+    if (filter === "any") return true;
+    if (filter === "never") return row.lastContact === "Not contacted";
+    return this.matchesDateWindow(this.recordField(row.record, "lastContactAt", ""), filter);
+  }
+
+  matchesNextAction(row: OutreachPipelineRow, filter: string) {
+    if (filter === "any") return true;
+    const value = this.recordField(row.record, "nextActionAt", "");
+    if (filter === "none") return !value;
+    const bucket = this.dueBucket(value);
+    if (filter === "overdue") return bucket === 0;
+    if (filter === "today") return bucket === 1;
+    if (filter === "week") return this.matchesDateWindow(value, "7d");
+    return true;
+  }
+
+  sortOutreachRows(rows: OutreachPipelineRow[], sort: string) {
+    return [...rows].sort((left, right) => {
+      if (sort === "name") return left.name.localeCompare(right.name);
+      if (sort === "last_contacted") return this.sortDate(this.recordField(right.record, "lastContactAt", "")) - this.sortDate(this.recordField(left.record, "lastContactAt", ""));
+      if (sort === "next_action") return this.sortDate(this.recordField(left.record, "nextActionAt", "")) - this.sortDate(this.recordField(right.record, "nextActionAt", ""));
+      return this.dueBucket(this.recordField(left.record, "nextActionAt", "")) - this.dueBucket(this.recordField(right.record, "nextActionAt", ""));
+    });
   }
 
   recordField(record: XrmRecord, key: string, fallback = "-") {
@@ -990,6 +1735,46 @@ export class AppComponent {
     } finally {
       this.saving.set(false);
     }
+  }
+
+  private async createSpecializedRecord(objectType: string, displayName: string, fields: Record<string, string>) {
+    this.saving.set(true);
+    this.saveError.set(null);
+    try {
+      const cleanFields = Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== ""));
+      const created = await this.api.createXrmRecord({
+        objectType,
+        displayName,
+        fields: cleanFields,
+        source: "web",
+        metadata: { templateKey: "job_search", source: "web" }
+      });
+      await this.refresh();
+      await this.selectRecordById(created.id);
+    } catch (error) {
+      this.saveError.set(error instanceof Error ? error.message : "Could not create record.");
+      throw error;
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  private normalizeDateFields(fields: Record<string, string>, keys: string[]) {
+    return Object.fromEntries(
+      Object.entries(fields).map(([key, value]) => {
+        if (keys.includes(key) && value && !value.includes("T")) {
+          return [key, new Date(`${value}T09:00:00.000`).toISOString()];
+        }
+        return [key, value];
+      })
+    );
+  }
+
+  private askNotFitReason() {
+    if (typeof window === "undefined") return "Marked not a fit";
+    const value = window.prompt("Why is this not a fit? Optional");
+    if (value === null) return null;
+    return value.trim() || "Marked not a fit";
   }
 
   private taskActionItem(task: TaskRow): ProductActionItem {
@@ -1110,11 +1895,117 @@ export class AppComponent {
 
   private async navigateToNav(item: NavItem) {
     const path = this.uiConfig().routes[item] ?? "/today";
-    await this.navigate(path);
+    await this.navigate(`${path}${this.queryStringForNav(item)}`);
   }
 
   private async navigate(path: string) {
     await this.router.navigateByUrl(path);
+  }
+
+  private syncUrlForCurrentNav() {
+    if (typeof window === "undefined") return;
+    const path = this.uiConfig().routes[this.selectedNav()] ?? window.location.pathname;
+    const query = this.queryStringForNav(this.selectedNav());
+    window.history.pushState(null, "", `${path}${query}`);
+  }
+
+  private queryStringForNav(item: NavItem) {
+    const params = new URLSearchParams();
+    const add = (key: string, value: string | number, defaultValue: string | number) => {
+      if (String(value) !== String(defaultValue)) {
+        params.set(key, String(value));
+      }
+    };
+    if (item === "Applications") {
+      add("q", this.applicationSearch(), "");
+      add("updated", this.applicationTimeFilter(), "any");
+      add("company", this.applicationCompanyFilter(), "all");
+      add("match", this.applicationMatchFilter(), "all");
+      add("cv", this.applicationCvFilter(), "any");
+      add("contact", this.applicationContactFilter(), "any");
+      add("source", this.applicationSourceFilter(), "all");
+      add("closed", this.applicationShowClosedFilter(), "no");
+      add("not_fit", this.applicationShowNotFitFilter(), "no");
+      add("sort", this.applicationSort(), "next_action");
+    }
+    if (item === "Jobs") {
+      add("q", this.jobSearch(), "");
+      add("date", this.jobDateFilter(), "any");
+      add("company", this.jobCompanyFilter(), "all");
+      add("source", this.jobSourceFilter(), "all");
+      add("match", this.jobMatchFilter(), "all");
+      add("status", this.jobApplicationStatusFilter(), "all");
+      add("location", this.jobLocationFilter(), "all");
+      add("remote", this.jobRemoteOnlyFilter(), "any");
+      add("cv_match", this.jobCvAssessedFilter(), "any");
+      add("contact", this.jobHasContactFilter(), "any");
+      add("sort", this.jobSort(), "newest");
+      add("page", this.jobPage(), 1);
+      add("page_size", this.jobPageSize(), 25);
+    }
+    if (item === "Pipeline") {
+      add("q", this.pipelineSearch(), "");
+      add("last_contacted", this.pipelineLastContactFilter(), "any");
+      add("next_action", this.pipelineNextActionFilter(), "any");
+      add("company", this.pipelineCompanyFilter(), "all");
+      add("channel", this.pipelineChannelFilter(), "all");
+      add("waiting", this.pipelineWaitingFilter(), "any");
+      add("draft", this.pipelineDraftFilter(), "any");
+      add("review", this.pipelineNeedsReviewFilter(), "any");
+      add("closed", this.pipelineShowClosedFilter(), "no");
+      add("sort", this.pipelineSort(), "overdue");
+    }
+    const value = params.toString();
+    return value ? `?${value}` : "";
+  }
+
+  private loadFiltersFromUrl() {
+    if (typeof window === "undefined") return;
+    const query = new URLSearchParams(window.location.search);
+    const nav = this.inferInitialNav();
+    if (nav === "Applications") {
+      this.applicationSearch.set(query.get("q") ?? "");
+      this.applicationTimeFilter.set(query.get("updated") ?? "any");
+      this.applicationCompanyFilter.set(query.get("company") ?? "all");
+      this.applicationMatchFilter.set(query.get("match") ?? "all");
+      this.applicationCvFilter.set(query.get("cv") ?? "any");
+      this.applicationContactFilter.set(query.get("contact") ?? "any");
+      this.applicationSourceFilter.set(query.get("source") ?? "all");
+      this.applicationShowClosedFilter.set(query.get("closed") ?? "no");
+      this.applicationShowNotFitFilter.set(query.get("not_fit") ?? "no");
+      this.applicationSort.set(query.get("sort") ?? "next_action");
+    }
+    if (nav === "Jobs") {
+      this.jobSearch.set(query.get("q") ?? "");
+      this.jobDateFilter.set(query.get("date") ?? "any");
+      this.jobCompanyFilter.set(query.get("company") ?? "all");
+      this.jobSourceFilter.set(query.get("source") ?? "all");
+      this.jobMatchFilter.set(query.get("match") ?? "all");
+      this.jobApplicationStatusFilter.set(query.get("status") ?? "all");
+      this.jobLocationFilter.set(query.get("location") ?? "all");
+      this.jobRemoteOnlyFilter.set(query.get("remote") ?? "any");
+      this.jobCvAssessedFilter.set(query.get("cv_match") ?? "any");
+      this.jobHasContactFilter.set(query.get("contact") ?? "any");
+      this.jobSort.set(query.get("sort") ?? "newest");
+      this.jobPage.set(Number(query.get("page") ?? "1") || 1);
+      this.jobPageSize.set(Number(query.get("page_size") ?? "25") || 25);
+    }
+    if (nav === "Pipeline") {
+      this.pipelineSearch.set(query.get("q") ?? "");
+      this.pipelineLastContactFilter.set(query.get("last_contacted") ?? "any");
+      this.pipelineNextActionFilter.set(query.get("next_action") ?? "any");
+      this.pipelineCompanyFilter.set(query.get("company") ?? "all");
+      this.pipelineChannelFilter.set(query.get("channel") ?? "all");
+      this.pipelineWaitingFilter.set(query.get("waiting") ?? "any");
+      this.pipelineDraftFilter.set(query.get("draft") ?? "any");
+      this.pipelineNeedsReviewFilter.set(query.get("review") ?? "any");
+      this.pipelineShowClosedFilter.set(query.get("closed") ?? "no");
+      this.pipelineSort.set(query.get("sort") ?? "overdue");
+    }
+  }
+
+  private setFilterSignal(key: string, value: string, signals: Record<string, { set: (value: string) => void }>) {
+    signals[key]?.set(value);
   }
 
   private recordRoute(record: XrmRecord) {
@@ -1140,7 +2031,25 @@ export class AppComponent {
     return {
       mode: "job_search",
       label: "Job Search",
-      templateKey: "job_search"
+      templateKey: "job_search",
+      demo: {
+        enabled: false,
+        guideVersion: 1,
+        readOnly: false,
+        resettable: false
+      }
+    };
+  }
+
+  private normalizeBootstrap(bootstrap: WorkspaceBootstrap): WorkspaceBootstrap {
+    return {
+      ...bootstrap,
+      demo: bootstrap.demo ?? {
+        enabled: false,
+        guideVersion: 1,
+        readOnly: false,
+        resettable: false
+      }
     };
   }
 
@@ -1154,6 +2063,56 @@ export class AppComponent {
       document.head.appendChild(meta);
     }
     meta.content = mode;
+  }
+
+  private applyDocumentMetadata() {
+    if (typeof document === "undefined") return;
+    const modeLabel = this.workspaceMode() === "outreach" ? "oXRM Outreach" : "oXRM Job Search";
+    document.title = `${this.selectedNav()} · ${modeLabel}`;
+    let description = document.querySelector<HTMLMetaElement>('meta[name="description"]');
+    if (!description) {
+      description = document.createElement("meta");
+      description.name = "description";
+      document.head.appendChild(description);
+    }
+    description.content =
+      this.workspaceMode() === "outreach"
+        ? "Self-hosted, AI-assisted outreach tracking."
+        : "Self-hosted, AI-assisted job application tracking.";
+    let theme = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+    if (!theme) {
+      theme = document.createElement("meta");
+      theme.name = "theme-color";
+      document.head.appendChild(theme);
+    }
+    theme.content = "#111827";
+  }
+
+  private initializeDemoGuide(bootstrap: WorkspaceBootstrap) {
+    if (!bootstrap.demo.enabled || typeof window === "undefined") {
+      this.demoWelcomeOpen.set(false);
+      return;
+    }
+    const query = new URLSearchParams(window.location.search);
+    const key = this.demoGuideStorageKey(bootstrap.demo.guideVersion);
+    if (query.get("tour") === "1") {
+      this.demoWelcomeOpen.set(false);
+      this.guidedTourOpen.set(true);
+      return;
+    }
+    const path = window.location.pathname;
+    const eligiblePath = path === "/" || path === "/today" || path === "/dashboard";
+    this.demoWelcomeOpen.set(eligiblePath && localStorage.getItem(key) !== "complete");
+  }
+
+  private persistDemoGuideCompletion() {
+    const bootstrap = this.bootstrap();
+    if (!bootstrap?.demo.enabled || typeof localStorage === "undefined") return;
+    localStorage.setItem(this.demoGuideStorageKey(bootstrap.demo.guideVersion), "complete");
+  }
+
+  private demoGuideStorageKey(version: number) {
+    return `oxrm.demoGuide.v${version}`;
   }
 
   private inferInitialNav(): NavItem {

@@ -289,6 +289,8 @@ jobs:
             expected_mode="\$2"
             expected_label="\$3"
             forbidden_label="\$4"
+            page_path="\$5"
+            welcome_label="\$6"
 
             bootstrap="\$(curl -fsS -H 'Cache-Control: no-cache' "https://\${host}/api/workspace/bootstrap?deploy=\${OXRM_DEPLOY_GIT_SHA}")"
             node -e '
@@ -298,10 +300,14 @@ jobs:
                 console.error(JSON.stringify({ error: "workspace_mode_mismatch", data, expected }, null, 2));
                 process.exit(1);
               }
+              if (!data.demo?.enabled || data.demo.guideVersion !== 1 || !data.demo.readOnly || !data.demo.resettable) {
+                console.error(JSON.stringify({ error: "demo_config_mismatch", data }, null, 2));
+                process.exit(1);
+              }
             ' "\${bootstrap}" "\${expected_mode}"
 
             dom_file="\$(mktemp)"
-            "\${browser}" --headless=new --disable-gpu --no-sandbox --ignore-certificate-errors --virtual-time-budget=8000 --dump-dom "https://\${host}/today?deploy=\${OXRM_DEPLOY_GIT_SHA}" > "\${dom_file}"
+            "\${browser}" --headless=new --disable-gpu --no-sandbox --ignore-certificate-errors --virtual-time-budget=8000 --dump-dom "https://\${host}\${page_path}?deploy=\${OXRM_DEPLOY_GIT_SHA}" > "\${dom_file}"
             grep -F "data-oxrm-mode=\"\${expected_mode}\"" "\${dom_file}" >/dev/null
             grep -F "oxrm-workspace-mode" "\${dom_file}" >/dev/null
             grep -F "\${expected_label}" "\${dom_file}" >/dev/null
@@ -309,8 +315,13 @@ jobs:
               echo "Rendered \${host} contains forbidden cross-mode label: \${forbidden_label}" >&2
               exit 1
             fi
+
+            welcome_dom="\$(mktemp)"
+            profile_dir="\$(mktemp -d)"
+            "\${browser}" --headless=new --disable-gpu --no-sandbox --ignore-certificate-errors --user-data-dir="\${profile_dir}" --virtual-time-budget=8000 --dump-dom "https://\${host}/today?deploy=\${OXRM_DEPLOY_GIT_SHA}" > "\${welcome_dom}"
+            grep -F "\${welcome_label}" "\${welcome_dom}" >/dev/null
           }
 
-          check_demo_mode job-search-demo.oxrm.orkestr.de job_search Applications Pipeline
-          check_demo_mode linkedin-outreach-demo.oxrm.orkestr.de outreach Pipeline Applications
+          check_demo_mode job-search-demo.oxrm.orkestr.de job_search Applications Pipeline /applications "private AI job-search copilot"
+          check_demo_mode linkedin-outreach-demo.oxrm.orkestr.de outreach Pipeline Applications /pipeline "private AI outreach copilot"
           REMOTE

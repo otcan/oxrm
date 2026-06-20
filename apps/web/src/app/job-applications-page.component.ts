@@ -1,31 +1,30 @@
 import { CommonModule } from "@angular/common";
 import { ChangeDetectionStrategy, Component, EventEmitter, Input, Output } from "@angular/core";
-import { FormsModule } from "@angular/forms";
-import { ProductStageGroup } from "./models";
+import { FilterBarComponent } from "./filter-bar.component";
+import { FilterChange, FilterControl, ProductStageGroup } from "./models";
 
 @Component({
   selector: "oc-job-applications-page",
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FilterBarComponent],
   template: `
-    <section class="page-toolbar">
-      <label>
-        Search
-        <input [ngModel]="search" (ngModelChange)="searchChange.emit($event)" name="applicationSearch" placeholder="Role, company, contact">
-      </label>
-      <label>
-        Stage
-        <select [ngModel]="stageFilter" (ngModelChange)="stageFilterChange.emit($event)" name="applicationStage">
-          <option value="all">All stages</option>
-          <option value="Saved">Saved</option>
-          <option value="Preparing">Preparing</option>
-          <option value="Applied">Applied</option>
-          <option value="Interviewing">Interviewing</option>
-          <option value="Closed">Closed</option>
-        </select>
-      </label>
-      <button type="button" class="primary" (click)="add.emit()">+ Add application</button>
-    </section>
+    <oc-filter-bar
+      [search]="search"
+      searchPlaceholder="Role, company, contact"
+      [controls]="controls"
+      [total]="total"
+      [shown]="shown"
+      noun="applications"
+      primaryActionLabel="+ Add application"
+      (searchChange)="searchChange.emit($event)"
+      (filterChange)="filterChange.emit($event)"
+      (clear)="clearFilters.emit()"
+      (primaryAction)="add.emit()"
+    />
+
+    @if (total !== shown) {
+      <p class="result-note">{{ total }} applications · {{ shown }} shown</p>
+    }
 
     <section class="stage-board product-board" aria-label="Applications by stage">
       @for (group of groups; track group.label) {
@@ -46,7 +45,7 @@ import { ProductStageGroup } from "./models";
                     {{ fitLabel(row) }}
                   </em>
                 </div>
-                <p>{{ human(row['stage']) }}</p>
+                <p>{{ cvState(row) }}</p>
                 <span>Next: {{ text(row, 'nextAction', 'Decide next step') }}</span>
                 <small>Contact: {{ text(row, 'responsiblePerson', 'No contact assigned') }}</small>
               </button>
@@ -60,11 +59,14 @@ import { ProductStageGroup } from "./models";
 })
 export class JobApplicationsPageComponent {
   @Input() search = "";
-  @Input() stageFilter = "all";
+  @Input() controls: FilterControl[] = [];
+  @Input() total = 0;
+  @Input() shown = 0;
   @Input() groups: ProductStageGroup[] = [];
   @Input() selectedId = "";
   @Output() searchChange = new EventEmitter<string>();
-  @Output() stageFilterChange = new EventEmitter<string>();
+  @Output() filterChange = new EventEmitter<FilterChange>();
+  @Output() clearFilters = new EventEmitter<void>();
   @Output() add = new EventEmitter<void>();
   @Output() open = new EventEmitter<Record<string, unknown>>();
 
@@ -91,6 +93,10 @@ export class JobApplicationsPageComponent {
     if (value >= 85) return "good";
     if (value >= 65) return "warn";
     return "muted";
+  }
+
+  cvState(row: Record<string, unknown>) {
+    return this.text(row, "cvVersion", "") ? "CV attached" : "CV missing";
   }
 
   human(value: unknown) {

@@ -27,6 +27,43 @@ export interface WorkspaceBootstrap {
   mode: WorkspaceMode;
   label: string;
   templateKey: WorkspaceMode;
+  demo: {
+    enabled: boolean;
+    guideVersion: number;
+    readOnly: boolean;
+    resettable: boolean;
+  };
+}
+
+export interface FilterOption {
+  label: string;
+  value: string;
+}
+
+export interface FilterControl {
+  key: string;
+  label: string;
+  value: string;
+  defaultValue: string;
+  options: FilterOption[];
+  more?: boolean;
+}
+
+export interface FilterChange {
+  key: string;
+  value: string;
+}
+
+export interface PageResult<T> {
+  items: T[];
+  total: number;
+  shown: number;
+  page: number;
+  pageSize: number;
+  pageCount: number;
+  start: number;
+  end: number;
+  hasNext: boolean;
 }
 
 export interface ProductActionItem {
