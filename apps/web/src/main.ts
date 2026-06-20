@@ -10,18 +10,27 @@ import { AppComponent } from "./app/app.component";
 class RouteSinkComponent {}
 
 const routes: Routes = [
-  { path: "start", component: RouteSinkComponent },
-  { path: "dashboard", component: RouteSinkComponent },
-  { path: "workspace", component: RouteSinkComponent },
+  { path: "today", component: RouteSinkComponent },
+  { path: "applications", component: RouteSinkComponent },
+  { path: "jobs", component: RouteSinkComponent },
+  { path: "contacts", component: RouteSinkComponent },
+  { path: "settings/advanced", component: RouteSinkComponent },
+  { path: "settings/advanced/activity", component: RouteSinkComponent },
+  { path: "start", redirectTo: "today", pathMatch: "full" },
+  { path: "dashboard", redirectTo: "today", pathMatch: "full" },
+  { path: "queue", redirectTo: "today", pathMatch: "full" },
+  { path: "workspace", redirectTo: "applications", pathMatch: "full" },
+  { path: "records/application", redirectTo: "applications", pathMatch: "full" },
+  { path: "records/job", redirectTo: "jobs", pathMatch: "full" },
+  { path: "records/job_contact", redirectTo: "contacts", pathMatch: "full" },
+  { path: "timeline", redirectTo: "settings/advanced/activity", pathMatch: "full" },
   { path: "views/:viewKey", component: RouteSinkComponent },
   { path: "records", component: RouteSinkComponent },
   { path: "records/:objectType", component: RouteSinkComponent },
   { path: "records/:objectType/:recordId", component: RouteSinkComponent },
-  { path: "queue", component: RouteSinkComponent },
-  { path: "timeline", component: RouteSinkComponent },
   { path: "settings", component: RouteSinkComponent },
-  { path: "", redirectTo: "dashboard", pathMatch: "full" },
-  { path: "**", redirectTo: "dashboard" }
+  { path: "", redirectTo: "today", pathMatch: "full" },
+  { path: "**", redirectTo: "today" }
 ];
 
 bootstrapApplication(AppComponent, {

@@ -224,7 +224,20 @@ export interface WorkspaceLayout {
   };
 }
 
-export type NavItem = "Start" | "Dashboard" | "Workspace" | "Views" | "Records" | "Queue" | "Timeline" | "Settings";
+export type NavItem =
+  | "Today"
+  | "Applications"
+  | "Jobs"
+  | "Contacts"
+  | "Settings"
+  | "Advanced"
+  | "Views"
+  | "Records"
+  | "Start"
+  | "Dashboard"
+  | "Workspace"
+  | "Queue"
+  | "Timeline";
 export type TaskStatus = "open" | "in_progress" | "blocked" | "done" | "canceled";
 export type TaskType = "outreach" | "follow_up" | "research" | "data_cleanup" | "approval" | "manual";
 

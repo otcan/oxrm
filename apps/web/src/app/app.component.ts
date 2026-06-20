@@ -34,6 +34,27 @@ interface OnboardingStep {
   nav?: NavItem;
 }
 
+interface NextActionItem {
+  kind: "task" | "suggestion" | "application";
+  id: string;
+  title: string;
+  context: string;
+  dueAt: string | null | undefined;
+  badge?: string | undefined;
+  sortDate: number;
+  sortBucket: number;
+}
+
+interface ContactSummary {
+  id?: string | undefined;
+  name: string;
+  title: string;
+  company: string;
+  lastContact: string | null | undefined;
+  linkedApplications: number;
+  fallbackApplicationId: string | undefined;
+}
+
 @Component({
   selector: "oc-root",
   standalone: true,
@@ -46,7 +67,7 @@ export class AppComponent {
   private readonly router = inject(Router);
   private readonly legacyViewObjectTypes = new Set(["lead", "person", "company", "task", "event"]);
 
-  readonly navItems: NavItem[] = ["Start", "Dashboard", "Workspace", "Views", "Records", "Queue", "Timeline", "Settings"];
+  readonly navItems: NavItem[] = ["Today", "Applications", "Jobs", "Contacts"];
   readonly selectedNav = signal<NavItem>(this.inferInitialNav());
   readonly activeTemplateKey = signal(this.inferInitialTemplateKey());
   readonly backupHealth = signal<"ok" | "degraded" | "optional">("optional");
@@ -70,6 +91,7 @@ export class AppComponent {
   readonly jobReferrals = signal<ViewRunResult | null>(null);
   readonly jobCvVersions = signal<ViewRunResult | null>(null);
   readonly jobCoverLetters = signal<ViewRunResult | null>(null);
+  readonly jobContacts = signal<XrmRecord[]>([]);
   readonly actionBlueprints = signal<ViewRunResult | null>(null);
   readonly actionSuggestions = signal<ViewRunResult | null>(null);
   readonly setupPlaybook = signal<ViewRunResult | null>(null);
@@ -91,6 +113,11 @@ export class AppComponent {
   readonly pendingRecordId = signal(this.inferInitialRecordId());
   readonly copiedPrompt = signal<string | null>(null);
   readonly onboardingAutoRouted = signal(false);
+  readonly applicationSearch = signal("");
+  readonly applicationStageFilter = signal("all");
+  readonly jobSearch = signal("");
+  readonly jobMatchFilter = signal("all");
+  readonly contactSearch = signal("");
   readonly leadForm = {
     fullName: "",
     company: "",
@@ -129,6 +156,167 @@ export class AppComponent {
     { label: "Agent suggestions", value: String(this.openActionSuggestionRows().length), tone: this.openActionSuggestionRows().length ? "warn" : "good" },
     { label: "Needs approval", value: String(this.approvalTasks().length), tone: this.approvalTasks().length ? "warn" : "good" }
   ]);
+
+  readonly todayActions = computed<NextActionItem[]>(() => {
+    const taskItems = this.visibleQueue().map((task) => ({
+      kind: "task" as const,
+      id: task.id,
+      title: task.title,
+      context: this.taskTarget(task),
+      dueAt: task.dueAt,
+      sortDate: this.sortDate(task.dueAt),
+      sortBucket: this.dueBucket(task.dueAt)
+    }));
+
+    const suggestionItems = this.openActionSuggestionRows().map((row) => ({
+      kind: "suggestion" as const,
+      id: this.rowText(row, "id"),
+      title: this.rowText(row, "title", "Suggested next step"),
+      context: this.rowText(row, "recommendedAction", this.rowText(row, "targetRecord", "Review the suggested action.")),
+      dueAt: typeof row["dueAt"] === "string" ? row["dueAt"] : null,
+      badge: "Suggested",
+      sortDate: this.sortDate(row["dueAt"]),
+      sortBucket: this.dueBucket(row["dueAt"])
+    }));
+
+    const applicationItems = this.jobApplicationRows()
+      .filter((row) => this.rowText(row, "nextActionAt") !== "-")
+      .map((row) => ({
+        kind: "application" as const,
+        id: this.rowText(row, "id"),
+        title: this.rowText(row, "nextAction", "Review next application step"),
+        context: `${this.rowText(row, "role")} at ${this.rowText(row, "company")}`,
+        dueAt: typeof row["nextActionAt"] === "string" ? row["nextActionAt"] : null,
+        sortDate: this.sortDate(row["nextActionAt"]),
+        sortBucket: this.dueBucket(row["nextActionAt"])
+      }));
+
+    const unique = new Map<string, NextActionItem>();
+    for (const item of [...taskItems, ...suggestionItems, ...applicationItems]) {
+      unique.set(`${item.kind}:${item.id}`, item);
+    }
+    return [...unique.values()]
+      .sort((a, b) => a.sortBucket - b.sortBucket || a.sortDate - b.sortDate || a.title.localeCompare(b.title))
+      .slice(0, 5);
+  });
+
+  readonly todaySummary = computed<Metric[]>(() => [
+    {
+      label: "Due today",
+      value: String(this.todayActions().filter((item) => item.sortBucket <= 1).length),
+      tone: this.todayActions().some((item) => item.sortBucket <= 1) ? "warn" : "good"
+    },
+    {
+      label: "Active applications",
+      value: String(this.jobApplicationRows().filter((row) => this.applicationStageBucket(row["stage"]) !== "Closed").length),
+      tone: "neutral"
+    },
+    {
+      label: "Interviews",
+      value: String(this.jobInterviewRows().length),
+      tone: this.jobInterviewRows().length ? "good" : "neutral"
+    }
+  ]);
+
+  readonly upcomingInterview = computed(() => {
+    const now = Date.now();
+    return [...this.jobInterviewRows()]
+      .filter((row) => this.sortDate(row["scheduledAt"]) >= now)
+      .sort((a, b) => this.sortDate(a["scheduledAt"]) - this.sortDate(b["scheduledAt"]))[0] ?? this.jobInterviewRows()[0] ?? null;
+  });
+
+  readonly applicationCounts = computed(() => {
+    const rows = this.jobApplicationRows();
+    return {
+      active: rows.filter((row) => this.applicationStageBucket(row["stage"]) !== "Closed").length,
+      waiting: rows.filter((row) => String(row["stage"] ?? "").toLowerCase().includes("applied")).length,
+      interviewing: rows.filter((row) => this.applicationStageBucket(row["stage"]) === "Interviewing").length
+    };
+  });
+
+  readonly filteredApplicationRows = computed(() => {
+    const query = this.applicationSearch().trim().toLowerCase();
+    const stage = this.applicationStageFilter();
+    return this.jobApplicationRows().filter((row) => {
+      const stageBucket = this.applicationStageBucket(row["stage"]);
+      const matchesStage = stage === "all" || stageBucket === stage;
+      const text = `${this.rowText(row, "role")} ${this.rowText(row, "company")} ${this.rowText(row, "responsiblePerson")}`.toLowerCase();
+      return matchesStage && (!query || text.includes(query));
+    });
+  });
+
+  readonly applicationStageGroups = computed(() => {
+    const rows = this.filteredApplicationRows();
+    return ["Saved", "Preparing", "Applied", "Interviewing", "Closed"].map((label) => ({
+      label,
+      rows: rows.filter((row) => this.applicationStageBucket(row["stage"]) === label)
+    }));
+  });
+
+  readonly filteredJobRows = computed(() => {
+    const query = this.jobSearch().trim().toLowerCase();
+    const match = this.jobMatchFilter();
+    return this.jobRows().filter((row) => {
+      const text = `${this.rowText(row, "title")} ${this.rowText(row, "company")} ${this.rowText(row, "location")} ${this.rowText(row, "platform")}`.toLowerCase();
+      const matchBucket = this.matchBucket(row);
+      return (!query || text.includes(query)) && (match === "all" || matchBucket === match);
+    });
+  });
+
+  readonly contactRows = computed<ContactSummary[]>(() => {
+    const applicationsByContact = new Map<string, Array<Record<string, unknown>>>();
+    for (const row of this.jobApplicationRows()) {
+      const name = this.rowText(row, "responsiblePerson", "").trim();
+      if (!name) {
+        continue;
+      }
+      const list = applicationsByContact.get(name) ?? [];
+      list.push(row);
+      applicationsByContact.set(name, list);
+    }
+
+    const records = this.jobContacts().map((record) => {
+      const linked = applicationsByContact.get(record.displayName) ?? [];
+      const latest = linked
+        .map((row) => (typeof row["lastTouchAt"] === "string" ? row["lastTouchAt"] : null))
+        .filter(Boolean)
+        .sort()
+        .at(-1);
+      return {
+        id: record.id,
+        name: record.displayName,
+        title: this.recordField(record, "title"),
+        company: linked[0] ? this.rowText(linked[0], "company") : this.recordField(record, "company", "Recruiting contact"),
+        lastContact: latest,
+        linkedApplications: linked.length,
+        fallbackApplicationId: linked[0] ? this.rowText(linked[0], "id") : undefined
+      };
+    });
+
+    const existingNames = new Set(records.map((record) => record.name));
+    const derived = [...applicationsByContact.entries()]
+      .filter(([name]) => !existingNames.has(name))
+      .map(([name, linked]) => ({
+        name,
+        title: "Recruiting contact",
+        company: this.rowText(linked[0] ?? {}, "company", "Unknown company"),
+        lastContact: linked
+          .map((row) => (typeof row["lastTouchAt"] === "string" ? row["lastTouchAt"] : null))
+          .filter(Boolean)
+          .sort()
+          .at(-1),
+        linkedApplications: linked.length,
+        fallbackApplicationId: linked[0] ? this.rowText(linked[0], "id") : undefined
+      }));
+
+    const query = this.contactSearch().trim().toLowerCase();
+    return [...records, ...derived]
+      .filter((contact) => {
+        const text = `${contact.name} ${contact.title} ${contact.company}`.toLowerCase();
+        return !query || text.includes(query);
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+  });
 
   readonly groupedViews = computed(() => {
     const activeViews = this.views().filter((view) => view.templateKey === this.activeTemplateKey());
@@ -366,6 +554,16 @@ export class AppComponent {
 
   readonly subtitle = computed(() => {
     switch (this.selectedNav()) {
+      case "Today":
+        return "What needs attention now, what is coming up, and where each application stands.";
+      case "Applications":
+        return "Track each application by stage, contact, match, and next action.";
+      case "Jobs":
+        return "Review saved roles and decide which opportunities are worth applying to.";
+      case "Contacts":
+        return "Recruiters, hiring managers, and warm contacts linked to applications.";
+      case "Advanced":
+        return "Administration, raw records, saved views, activity, and automation internals.";
       case "Dashboard":
         return "Who needs follow-up today, what happened last, and what should happen next.";
       case "Start":
@@ -387,7 +585,7 @@ export class AppComponent {
 
   constructor() {
     if (typeof window !== "undefined" && window.location.pathname === "/") {
-      void this.navigateToNav(this.selectedNav());
+      void this.navigateToNav("Today");
     }
     void this.refresh();
   }
@@ -401,6 +599,10 @@ export class AppComponent {
     if (item === "Records") {
       void this.loadRecords();
     }
+  }
+
+  selectSettings() {
+    this.selectNav("Settings");
   }
 
   async refresh() {
@@ -420,6 +622,7 @@ export class AppComponent {
       jobReferrals,
       jobCvVersions,
       jobCoverLetters,
+      jobContacts,
       actionBlueprints,
       actionSuggestions,
       setupPlaybook
@@ -439,6 +642,7 @@ export class AppComponent {
       this.api.runView("job_search.referrals").catch(() => null),
       this.api.runView("job_search.documents").catch(() => null),
       this.api.runView("job_search.cover_letters").catch(() => null),
+      this.api.listXrmRecords({ objectType: "job_contact", limit: 100 }).catch(() => []),
       this.activeTemplateKey() === "job_search" ? this.api.runView("job_search.action_blueprints").catch(() => null) : Promise.resolve(null),
       this.activeTemplateKey() === "job_search" ? this.api.runView("job_search.action_suggestions").catch(() => null) : Promise.resolve(null),
       this.api.runView(this.activeTemplateKey() === "job_search" ? "job_search.playbook" : "outreach.playbook").catch(() => null)
@@ -459,6 +663,7 @@ export class AppComponent {
     this.jobReferrals.set(jobReferrals);
     this.jobCvVersions.set(jobCvVersions);
     this.jobCoverLetters.set(jobCoverLetters);
+    this.jobContacts.set(jobContacts);
     this.actionBlueprints.set(actionBlueprints);
     this.actionSuggestions.set(actionSuggestions);
     this.setupPlaybook.set(setupPlaybook);
@@ -624,9 +829,12 @@ export class AppComponent {
       const record = await this.api.getXrmRecord(id);
       this.selectedDetail.set({ kind: "record", item: record });
       if (record.objectType?.slug) {
-        this.selectedNav.set("Records");
         this.selectedRecordObjectType.set(record.objectType.slug);
-        void this.navigate(`/records/${encodeURIComponent(record.objectType.slug)}/${encodeURIComponent(record.id)}`);
+        const isRawRecordRoute = typeof window !== "undefined" && window.location.pathname.startsWith("/records");
+        if (this.selectedNav() === "Records" || isRawRecordRoute) {
+          this.selectedNav.set("Records");
+          void this.navigate(`/records/${encodeURIComponent(record.objectType.slug)}/${encodeURIComponent(record.id)}`);
+        }
       }
     } catch (error) {
       this.detailError.set(error instanceof Error ? error.message : "Could not load record detail.");
@@ -717,14 +925,17 @@ export class AppComponent {
   }
 
   fitLabel(row: Record<string, unknown>) {
-    const value = this.fitRate(row);
-    if (value >= 85) {
-      return `${value}% strong fit`;
+    const bucket = this.matchBucket(row);
+    if (bucket === "strong") {
+      return "Strong match";
     }
-    if (value >= 65) {
-      return `${value}% possible fit`;
+    if (bucket === "possible") {
+      return "Possible match";
     }
-    return `${value}% weak fit`;
+    if (bucket === "weak") {
+      return "Weak match";
+    }
+    return "Not assessed";
   }
 
   fitTone(row: Record<string, unknown>) {
@@ -759,13 +970,116 @@ export class AppComponent {
   }
 
   suggestionMeta(row: Record<string, unknown>) {
-    const confidence = this.rowText(row, "confidence", "");
     const status = this.stageLabel(row["status"]);
-    return confidence ? `${status} · ${confidence}% confidence` : status;
+    return status === "-" ? "Suggested" : status;
   }
 
   suggestionDue(row: Record<string, unknown>) {
     return this.rowDate(row, "dueAt") !== "-" ? `Due ${this.rowDate(row, "dueAt")}` : "No due date";
+  }
+
+  actionDueLabel(item: NextActionItem) {
+    if (!item.dueAt) {
+      return "Review";
+    }
+    return this.relativeDateLabel(item.dueAt);
+  }
+
+  async openTodayAction(item: NextActionItem) {
+    if (item.kind === "task") {
+      const task = this.tasks().find((candidate) => candidate.id === item.id) ?? this.queue().find((candidate) => candidate.id === item.id);
+      if (task) {
+        this.selectTask(task);
+      }
+      return;
+    }
+    await this.selectRecordById(item.id);
+  }
+
+  async openContact(contact: ContactSummary) {
+    if (contact.id) {
+      await this.selectRecordById(contact.id);
+      return;
+    }
+    if (contact.fallbackApplicationId) {
+      await this.selectRecordById(contact.fallbackApplicationId);
+    }
+  }
+
+  startCreateRecord(slug: string) {
+    this.selectedRecordObjectType.set(slug);
+    this.openCreateRecord();
+  }
+
+  setApplicationSearch(value: string) {
+    this.applicationSearch.set(value);
+  }
+
+  setApplicationStageFilter(value: string) {
+    this.applicationStageFilter.set(value);
+  }
+
+  setJobSearch(value: string) {
+    this.jobSearch.set(value);
+  }
+
+  setJobMatchFilter(value: string) {
+    this.jobMatchFilter.set(value);
+  }
+
+  setContactSearch(value: string) {
+    this.contactSearch.set(value);
+  }
+
+  applicationStageBucket(value: unknown) {
+    const stage = String(value || "").toLowerCase();
+    if (stage.includes("reject") || stage.includes("archive") || stage.includes("closed")) {
+      return "Closed";
+    }
+    if (stage.includes("interview") || stage.includes("intro")) {
+      return "Interviewing";
+    }
+    if (stage.includes("applied") || stage.includes("waiting")) {
+      return "Applied";
+    }
+    if (stage.includes("fit") || stage.includes("draft") || stage.includes("prep") || stage.includes("contact")) {
+      return "Preparing";
+    }
+    return "Saved";
+  }
+
+  applicationNextAction(row: Record<string, unknown>) {
+    const action = this.rowText(row, "nextAction", "");
+    if (!action) {
+      return "Decide next step";
+    }
+    return this.truncate(action, 88);
+  }
+
+  applicationContact(row: Record<string, unknown>) {
+    return this.rowText(row, "responsiblePerson", "No contact assigned");
+  }
+
+  matchBucket(row: Record<string, unknown>) {
+    const value = this.fitRate(row);
+    if (!value) {
+      return "not";
+    }
+    if (value >= 85) {
+      return "strong";
+    }
+    if (value >= 65) {
+      return "possible";
+    }
+    return "weak";
+  }
+
+  recordField(record: XrmRecord, key: string, fallback = "-") {
+    const value = record.fields?.[key];
+    if (value === undefined || value === null || value === "") {
+      return fallback;
+    }
+    return typeof value === "object" ? JSON.stringify(value) : String(value);
   }
 
   async createLead() {
@@ -1131,14 +1445,19 @@ export class AppComponent {
 
   private async navigateToNav(item: NavItem) {
     const path = {
+      Today: "/today",
+      Applications: "/applications",
+      Jobs: "/jobs",
+      Contacts: "/contacts",
+      Advanced: "/settings/advanced",
+      Settings: "/settings",
       Start: `/start?template=${encodeURIComponent(this.activeTemplateKey())}`,
-      Dashboard: "/dashboard",
-      Workspace: "/workspace",
+      Dashboard: "/today",
+      Workspace: "/applications",
       Views: `/views/${encodeURIComponent(this.selectedViewKey() ?? this.views()[0]?.key ?? "lead.all")}`,
       Records: this.selectedRecordObjectType() ? `/records/${encodeURIComponent(this.selectedRecordObjectType() ?? "")}` : "/records",
-      Queue: "/queue",
-      Timeline: "/timeline",
-      Settings: "/settings"
+      Queue: "/today",
+      Timeline: "/settings/advanced/activity"
     }[item];
     await this.navigate(path);
   }
@@ -1194,18 +1513,19 @@ export class AppComponent {
 
   private inferInitialNav(): NavItem {
     if (typeof window === "undefined") {
-      return "Dashboard";
+      return "Today";
     }
     const path = window.location.pathname;
-    if (path.startsWith("/start")) return "Start";
-    if (path.startsWith("/dashboard")) return "Dashboard";
-    if (path.startsWith("/workspace")) return "Workspace";
+    if (path.startsWith("/start")) return "Today";
+    if (path.startsWith("/today") || path.startsWith("/dashboard") || path.startsWith("/queue")) return "Today";
+    if (path.startsWith("/applications") || path.startsWith("/workspace") || path === "/records/application") return "Applications";
+    if (path.startsWith("/jobs") || path === "/records/job") return "Jobs";
+    if (path.startsWith("/contacts") || path === "/records/job_contact") return "Contacts";
     if (path.startsWith("/views")) return "Views";
     if (path.startsWith("/records")) return "Records";
-    if (path.startsWith("/queue")) return "Queue";
-    if (path.startsWith("/timeline")) return "Timeline";
+    if (path.startsWith("/settings/advanced") || path.startsWith("/timeline")) return "Advanced";
     if (path.startsWith("/settings")) return "Settings";
-    return "Dashboard";
+    return "Today";
   }
 
   private viewCount(key: string) {
@@ -1228,24 +1548,7 @@ export class AppComponent {
   }
 
   private shouldAutoOpenStart() {
-    if (typeof window === "undefined") {
-      return false;
-    }
-    const path = window.location.pathname;
-    if (!["/", "/dashboard"].includes(path)) {
-      return false;
-    }
-    if (window.location.hostname.endsWith(".oxrm.orkestr.de")) {
-      return false;
-    }
-    return (
-      this.leads().length === 0 &&
-      this.visibleTasks().length === 0 &&
-      this.visibleEvents().length === 0 &&
-      this.jobApplicationRows().length === 0 &&
-      this.jobRows().length === 0 &&
-      this.setupPlaybookRows().length === 0
-    );
+    return false;
   }
 
   private jobSearchCodexPrompt() {
@@ -1466,6 +1769,52 @@ Do not send emails, LinkedIn messages, connection requests, or external actions.
 
   private looksLikeDate(value: string) {
     return /^\d{4}-\d{2}-\d{2}(?:T|\b)/.test(value) && !Number.isNaN(new Date(value).getTime());
+  }
+
+  private sortDate(value: unknown) {
+    if (typeof value !== "string" || !value) {
+      return Number.MAX_SAFE_INTEGER;
+    }
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? Number.MAX_SAFE_INTEGER : date.getTime();
+  }
+
+  private dueBucket(value: unknown) {
+    const timestamp = this.sortDate(value);
+    if (timestamp === Number.MAX_SAFE_INTEGER) {
+      return 3;
+    }
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 1);
+    if (timestamp < start.getTime()) {
+      return 0;
+    }
+    if (timestamp < end.getTime()) {
+      return 1;
+    }
+    return 2;
+  }
+
+  private relativeDateLabel(value: string) {
+    const bucket = this.dueBucket(value);
+    if (bucket === 0) {
+      return "Overdue";
+    }
+    if (bucket === 1) {
+      return "Due today";
+    }
+    const date = new Date(value);
+    const tomorrow = new Date();
+    tomorrow.setHours(0, 0, 0, 0);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const dayAfterTomorrow = new Date(tomorrow);
+    dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 1);
+    if (date.getTime() >= tomorrow.getTime() && date.getTime() < dayAfterTomorrow.getTime()) {
+      return "Tomorrow";
+    }
+    return this.formatDate(value, value.includes("T") ? "datetime" : "date");
   }
 
   private formatDate(value: string, mode: "date" | "datetime") {

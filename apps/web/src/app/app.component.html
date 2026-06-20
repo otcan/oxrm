@@ -16,19 +16,16 @@
       }
     </nav>
 
-    <div class="view-nav" aria-label="Configured views">
-      <span>Views</span>
-      @for (group of groupedViews(); track group.label) {
-        <small>{{ group.label }}</small>
-        @for (view of group.views; track view.id) {
-          <button type="button" [class.active]="view.key === selectedViewKey()" (click)="selectView(view)">
-            {{ view.name }}
-          </button>
-        }
-      } @empty {
-        <small>No configured views</small>
-      }
-    </div>
+    <button
+      type="button"
+      class="settings-nav"
+      [class.active]="selectedNav() === 'Settings' || selectedNav() === 'Advanced'"
+      (click)="selectSettings()"
+      aria-label="Settings"
+    >
+      <span aria-hidden="true">⚙</span>
+      Settings
+    </button>
   </aside>
 
   <section class="workspace">
@@ -47,6 +44,203 @@
         </header>
 
         @switch (selectedNav()) {
+          @case ("Today") {
+            <section class="today-heading">
+              <div>
+                <h2>{{ todayActions().length }} {{ todayActions().length === 1 ? 'thing needs' : 'things need' }} your attention</h2>
+              </div>
+              <button type="button" class="primary" (click)="startCreateRecord('application')">+ Add application</button>
+            </section>
+
+            <section class="metrics compact" aria-label="Job search summary">
+              @for (metric of todaySummary(); track metric.label) {
+                <article class="metric" [class.good]="metric.tone === 'good'" [class.warn]="metric.tone === 'warn'">
+                  <span>{{ metric.label }}</span>
+                  <strong>{{ metric.value }}</strong>
+                </article>
+              }
+            </section>
+
+            <section class="today-grid">
+              <article class="panel next-actions-panel">
+                <header>
+                  <div>
+                    <h2>Next actions</h2>
+                    <p>Overdue first, then today, then upcoming.</p>
+                  </div>
+                </header>
+                <div class="simple-list">
+                  @for (item of todayActions(); track item.kind + item.id) {
+                    <button type="button" class="list-row action-row" [class.suggested]="item.badge" (click)="openTodayAction(item)">
+                      <div>
+                        <strong>{{ item.title }}</strong>
+                        <span>{{ item.context }}</span>
+                      </div>
+                      <div class="row-meta">
+                        @if (item.badge) {
+                          <em>{{ item.badge }}</em>
+                        }
+                        <time>{{ actionDueLabel(item) }}</time>
+                      </div>
+                    </button>
+                  } @empty {
+                    <div class="empty subtle">No next actions. Add an application or review saved jobs.</div>
+                  }
+                </div>
+              </article>
+
+              <aside class="today-side">
+                @if (upcomingInterview(); as interview) {
+                  <article class="panel compact-panel">
+                    <h2>Upcoming</h2>
+                    <button type="button" class="mini-row action-row" (click)="selectRecordRow(interview)">
+                      <strong>{{ rowText(interview, 'title') }}</strong>
+                      <span>{{ rowDate(interview, 'scheduledAt') }}</span>
+                    </button>
+                  </article>
+                }
+
+                <article class="panel compact-panel">
+                  <h2>Applications</h2>
+                  <div class="summary-line">
+                    <strong>{{ applicationCounts().active }} active</strong>
+                    <span>{{ applicationCounts().waiting }} waiting · {{ applicationCounts().interviewing }} interviewing</span>
+                  </div>
+                  <button type="button" (click)="selectNav('Applications')">Open applications</button>
+                </article>
+              </aside>
+            </section>
+          }
+
+          @case ("Applications") {
+            <section class="page-toolbar">
+              <label>
+                Search
+                <input [ngModel]="applicationSearch()" (ngModelChange)="setApplicationSearch($event)" name="applicationSearch" placeholder="Role, company, contact">
+              </label>
+              <label>
+                Stage
+                <select [ngModel]="applicationStageFilter()" (ngModelChange)="setApplicationStageFilter($event)" name="applicationStage">
+                  <option value="all">All stages</option>
+                  <option value="Saved">Saved</option>
+                  <option value="Preparing">Preparing</option>
+                  <option value="Applied">Applied</option>
+                  <option value="Interviewing">Interviewing</option>
+                  <option value="Closed">Closed</option>
+                </select>
+              </label>
+              <button type="button" class="primary" (click)="startCreateRecord('application')">+ Add application</button>
+            </section>
+
+            <section class="stage-board product-board" aria-label="Applications by stage">
+              @for (group of applicationStageGroups(); track group.label) {
+                <section class="stage-lane product-lane">
+                  <header>
+                    <h3>{{ group.label }}</h3>
+                    <span>{{ group.rows.length }}</span>
+                  </header>
+                  <div class="application-stack">
+                    @for (row of group.rows; track row['id']) {
+                      <button type="button" class="application-card compact-card" [class.selected]="isSelected('record', rowText(row, 'id'))" (click)="selectRecordRow(row)">
+                        <div class="application-card-header">
+                          <div>
+                            <strong>{{ rowText(row, 'role') }}</strong>
+                            <span>{{ rowText(row, 'company') }}</span>
+                          </div>
+                          <em
+                            [class.good]="fitTone(row) === 'good'"
+                            [class.warn]="fitTone(row) === 'warn'"
+                            [class.muted]="fitTone(row) === 'muted'"
+                          >
+                            {{ fitLabel(row) }}
+                          </em>
+                        </div>
+                        <p>{{ stageLabel(row['stage']) }}</p>
+                        <span>Next: {{ applicationNextAction(row) }}</span>
+                        <small>Contact: {{ applicationContact(row) }}</small>
+                      </button>
+                    }
+                  </div>
+                </section>
+              }
+            </section>
+          }
+
+          @case ("Jobs") {
+            <section class="page-toolbar">
+              <label>
+                Search
+                <input [ngModel]="jobSearch()" (ngModelChange)="setJobSearch($event)" name="jobSearch" placeholder="Role, company, location">
+              </label>
+              <label>
+                Match
+                <select [ngModel]="jobMatchFilter()" (ngModelChange)="setJobMatchFilter($event)" name="jobMatch">
+                  <option value="all">All matches</option>
+                  <option value="strong">Strong match</option>
+                  <option value="possible">Possible match</option>
+                  <option value="weak">Weak match</option>
+                  <option value="not">Not assessed</option>
+                </select>
+              </label>
+              <button type="button" class="primary" (click)="startCreateRecord('job')">+ Add job</button>
+            </section>
+
+            <section class="panel product-list-panel">
+              <div class="simple-list">
+                @for (row of filteredJobRows(); track row['id']) {
+                  <button type="button" class="list-row job-row action-row" [class.selected]="isSelected('record', rowText(row, 'id'))" (click)="selectRecordRow(row)">
+                    <div>
+                      <strong>{{ rowText(row, 'title') }}</strong>
+                      <span>{{ rowText(row, 'company') }} · {{ rowText(row, 'location') }}</span>
+                      <small>{{ rowText(row, 'platform') }} · {{ stageLabel(row['applicationStage']) }}</small>
+                    </div>
+                    <div class="row-meta">
+                      <em
+                        [class.good]="fitTone(row) === 'good'"
+                        [class.warn]="fitTone(row) === 'warn'"
+                        [class.muted]="fitTone(row) === 'muted'"
+                      >
+                        {{ fitLabel(row) }}
+                      </em>
+                      <time>{{ rowDate(row, 'lastTouchAt') !== '-' ? rowDate(row, 'lastTouchAt') : 'Saved' }}</time>
+                    </div>
+                  </button>
+                } @empty {
+                  <div class="empty subtle">No jobs match this filter.</div>
+                }
+              </div>
+            </section>
+          }
+
+          @case ("Contacts") {
+            <section class="page-toolbar slim">
+              <label>
+                Search
+                <input [ngModel]="contactSearch()" (ngModelChange)="setContactSearch($event)" name="contactSearch" placeholder="Name, company, role">
+              </label>
+              <button type="button" class="primary" (click)="startCreateRecord('job_contact')">+ Add contact</button>
+            </section>
+
+            <section class="panel product-list-panel">
+              <div class="simple-list">
+                @for (contact of contactRows(); track contact.id || contact.name) {
+                  <button type="button" class="list-row contact-row action-row" (click)="openContact(contact)">
+                    <div>
+                      <strong>{{ contact.name }}</strong>
+                      <span>{{ contact.title }} at {{ contact.company }}</span>
+                      <small>Last contact: {{ contact.lastContact ? rowDate({ lastContact: contact.lastContact }, 'lastContact') : 'Not recorded' }}</small>
+                    </div>
+                    <div class="row-meta">
+                      <time>{{ contact.linkedApplications }} {{ contact.linkedApplications === 1 ? 'application' : 'applications' }}</time>
+                    </div>
+                  </button>
+                } @empty {
+                  <div class="empty subtle">No contacts yet.</div>
+                }
+              </div>
+            </section>
+          }
+
           @case ("Start") {
             <section class="start-hero">
               <div>
@@ -642,34 +836,6 @@
                     </div>
                   }
 
-                  @if (recordCreateOpen()) {
-                    <div class="modal-backdrop" (click)="closeCreateRecord()">
-                      <section class="modal" (click)="$event.stopPropagation()">
-                        <header>
-                          <div>
-                            <h2>Create {{ selectedObjectType()?.label }}</h2>
-                            <p>Fields come from the selected XRM record type.</p>
-                          </div>
-                          <button type="button" (click)="closeCreateRecord()">Close</button>
-                        </header>
-                        <div class="form-grid">
-                          @for (field of selectedObjectType()?.fields || []; track field.key) {
-                            <label>
-                              {{ field.label }}
-                              <input [ngModel]="recordForm()[field.key] || ''" (ngModelChange)="setRecordField(field.key, $event)" [name]="'record-' + field.key">
-                            </label>
-                          }
-                        </div>
-                        @if (saveError()) {
-                          <div class="empty error">{{ saveError() }}</div>
-                        }
-                        <div class="modal-actions">
-                          <button type="button" (click)="closeCreateRecord()">Cancel</button>
-                          <button type="button" class="primary" [disabled]="saving()" (click)="createRecord()">Create</button>
-                        </div>
-                      </section>
-                    </div>
-                  }
                 </article>
               </section>
             }
@@ -888,14 +1054,103 @@
                   <div class="queue-row">
                     <div>
                       <strong>Runtime</strong>
-                      <span>Docker instance; oXRM CLI and MCP run inside the instance network.</span>
+                      <span>Docker instance running the local app and services.</span>
                     </div>
                     <time>oxrm</time>
                   </div>
+                  <button type="button" class="queue-row action-row" (click)="selectNav('Advanced')">
+                    <div>
+                      <strong>Advanced</strong>
+                      <span>Saved views, raw records, activity, schema, and automation setup.</span>
+                    </div>
+                    <time>Open</time>
+                  </button>
                 </div>
               </article>
             </section>
           }
+
+          @case ("Advanced") {
+            <section class="panels single">
+              <article class="panel">
+                <header>
+                  <div>
+                    <h2>Advanced</h2>
+                    <p>Developer and administration surfaces stay here so the default workflow stays focused.</p>
+                  </div>
+                </header>
+                <div class="advanced-grid">
+                  <button type="button" class="action-row" (click)="selectNav('Views')">
+                    <strong>Saved views</strong>
+                    <span>Open configured table views and filters.</span>
+                  </button>
+                  <button type="button" class="action-row" (click)="selectNav('Records')">
+                    <strong>Raw records</strong>
+                    <span>Inspect object types, fields, relationships, and delete records.</span>
+                  </button>
+                  <button type="button" class="action-row" (click)="openViewByKey('job_search.action_blueprints')">
+                    <strong>Advanced automation</strong>
+                    <span>View draft-only action setup and internal workflows.</span>
+                  </button>
+                  <button type="button" class="action-row" (click)="refresh()">
+                    <strong>Backups</strong>
+                    <span>Current backup health: {{ backupHealth() }}.</span>
+                  </button>
+                </div>
+              </article>
+
+              <article class="panel">
+                <header>
+                  <h2>Activity</h2>
+                </header>
+                <div class="queue">
+                  @for (event of visibleEvents(); track event.id) {
+                    <button type="button" class="queue-row action-row event-row" [class.selected]="isSelected('event', event.id)" (click)="selectEvent(event)">
+                      <div>
+                        <strong>{{ eventTitle(event) }}</strong>
+                        <span>{{ eventSubtitle(event) }}</span>
+                        @if (eventSnippet(event)) {
+                          <small>{{ eventSnippet(event) }}</small>
+                        }
+                      </div>
+                      <time>{{ event.occurredAt | date:'short' }}</time>
+                    </button>
+                  } @empty {
+                    <div class="empty">No activity recorded.</div>
+                  }
+                </div>
+              </article>
+            </section>
+          }
+        }
+
+        @if (recordCreateOpen()) {
+          <div class="modal-backdrop" (click)="closeCreateRecord()">
+            <section class="modal" (click)="$event.stopPropagation()">
+              <header>
+                <div>
+                  <h2>Add {{ selectedObjectType()?.label || 'record' }}</h2>
+                  <p>Fill the useful fields now. You can add more detail later.</p>
+                </div>
+                <button type="button" (click)="closeCreateRecord()">Close</button>
+              </header>
+              <div class="form-grid">
+                @for (field of selectedObjectType()?.fields || []; track field.key) {
+                  <label>
+                    {{ field.label }}
+                    <input [ngModel]="recordForm()[field.key] || ''" (ngModelChange)="setRecordField(field.key, $event)" [name]="'record-' + field.key">
+                  </label>
+                }
+              </div>
+              @if (saveError()) {
+                <div class="empty error">{{ saveError() }}</div>
+              }
+              <div class="modal-actions">
+                <button type="button" (click)="closeCreateRecord()">Cancel</button>
+                <button type="button" class="primary" [disabled]="saving()" (click)="createRecord()">Create</button>
+              </div>
+            </section>
+          </div>
         }
       </div>
 
