@@ -121,9 +121,9 @@ compose_file="infra/compose/docker-compose.public-demo.yml"
 docker compose --env-file "$env_file" -p "$compose_project" -f "$compose_file" down -v --remove-orphans
 docker compose --env-file "$env_file" -p "$compose_project" -f "$compose_file" up -d postgres
 docker compose --env-file "$env_file" -p "$compose_project" -f "$compose_file" build api
-docker compose --env-file "$env_file" -p "$compose_project" -f "$compose_file" run --rm api scripts/oxrm-internal db migrate
-docker compose --env-file "$env_file" -p "$compose_project" -f "$compose_file" run --rm api scripts/oxrm-internal db seed
-docker compose --env-file "$env_file" -p "$compose_project" -f "$compose_file" run --rm api scripts/oxrm-internal db demo "$demo_scenario"
+docker compose --env-file "$env_file" -p "$compose_project" -f "$compose_file" run --rm -T api scripts/oxrm-internal db migrate
+docker compose --env-file "$env_file" -p "$compose_project" -f "$compose_file" run --rm -T api scripts/oxrm-internal db seed
+docker compose --env-file "$env_file" -p "$compose_project" -f "$compose_file" run --rm -T api scripts/oxrm-internal db demo "$demo_scenario"
 docker compose --env-file "$env_file" -p "$compose_project" -f "$compose_file" up -d api
 
 health_json=""
