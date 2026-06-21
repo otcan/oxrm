@@ -14,6 +14,7 @@ import { DetailDrawerComponent } from "./detail-drawer.component";
 import { GuidedTourComponent } from "./guided-tour.component";
 import { JobApplicationsPageComponent } from "./job-applications-page.component";
 import { JobContactRow, JobContactsPageComponent } from "./job-contacts-page.component";
+import { CoverLetterDraftRequest, DocumentSaveRequest, JobDocumentsPageComponent } from "./job-documents-page.component";
 import { JobJobsPageComponent } from "./job-jobs-page.component";
 import { OutreachCompaniesPageComponent } from "./outreach-companies-page.component";
 import { OutreachPeoplePageComponent } from "./outreach-people-page.component";
@@ -54,6 +55,7 @@ const JOB_NAV: NavDefinition[] = [
   { label: "Today", path: "/today" },
   { label: "Applications", path: "/applications" },
   { label: "Jobs", path: "/jobs" },
+  { label: "Documents", path: "/documents" },
   { label: "Contacts", path: "/contacts" }
 ];
 
@@ -80,6 +82,7 @@ const OUTREACH_NAV: NavDefinition[] = [
     GuidedTourComponent,
     JobApplicationsPageComponent,
     JobContactsPageComponent,
+    JobDocumentsPageComponent,
     JobJobsPageComponent,
     OutreachCompaniesPageComponent,
     OutreachPeoplePageComponent,
@@ -108,6 +111,15 @@ export class AppComponent {
   readonly jobInterviews = signal<ViewRunResult | null>(null);
   readonly jobContacts = signal<XrmRecord[]>([]);
   readonly cvRecords = signal<XrmRecord[]>([]);
+  readonly coverLetterRecords = signal<XrmRecord[]>([]);
+  readonly savedDocumentId = signal("");
+  readonly coverLetterDraftRequest = signal<CoverLetterDraftRequest | null>(null);
+  readonly coverLetterDrafts = computed(() =>
+    this.coverLetterRecords().filter((record) => {
+      const version = String(record.fields?.["version"] ?? "");
+      return record.metadata?.["draftOnly"] === true || /draft/i.test(`${record.displayName} ${version}`);
+    })
+  );
   readonly outreachLeadRecords = signal<XrmRecord[]>([]);
   readonly outreachPeopleRecords = signal<XrmRecord[]>([]);
   readonly outreachCompanyRecords = signal<XrmRecord[]>([]);
@@ -202,6 +214,7 @@ export class AppComponent {
         Today: "/today",
         Applications: "/applications",
         Jobs: "/jobs",
+        Documents: "/documents",
         Contacts: "/contacts",
         Settings: "/settings",
         Advanced: "/settings/advanced"
@@ -959,6 +972,8 @@ export class AppComponent {
         return "Track each application by stage, contact, fit, and next action.";
       case "Jobs":
         return "Review saved roles and decide which opportunities are worth applying to.";
+      case "Documents":
+        return "Create and maintain reusable CV versions and cover letter drafts.";
       case "Contacts":
         return "Recruiters, hiring managers, and warm contacts linked to applications.";
       case "Pipeline":
@@ -1011,6 +1026,7 @@ export class AppComponent {
       jobInterviews,
       jobContacts,
       cvRecords,
+      coverLetterRecords,
       outreachLeads,
       outreachPeople,
       outreachCompanies
@@ -1026,6 +1042,7 @@ export class AppComponent {
       templateKey === "job_search" ? this.api.runView("job_search.interviews").catch(() => null) : Promise.resolve(null),
       templateKey === "job_search" ? this.api.listXrmRecords({ objectType: "job_contact", limit: 100 }).catch(() => []) : Promise.resolve([]),
       templateKey === "job_search" ? this.api.listXrmRecords({ objectType: "cv_version", limit: 100 }).catch(() => []) : Promise.resolve([]),
+      templateKey === "job_search" ? this.api.listXrmRecords({ objectType: "cover_letter", limit: 100 }).catch(() => []) : Promise.resolve([]),
       this.api.listXrmRecords({ objectType: "lead", limit: 100 }).catch(() => []),
       this.api.listXrmRecords({ objectType: "person", limit: 100 }).catch(() => []),
       this.api.listXrmRecords({ objectType: "company", limit: 100 }).catch(() => [])
@@ -1042,6 +1059,7 @@ export class AppComponent {
     this.jobInterviews.set(jobInterviews);
     this.jobContacts.set(jobContacts);
     this.cvRecords.set(cvRecords.filter((record) => this.recordBelongsToMode(record, "job_search")));
+    this.coverLetterRecords.set(coverLetterRecords.filter((record) => this.recordBelongsToMode(record, "job_search")));
     this.outreachLeadRecords.set(outreachLeads.filter((record) => this.recordBelongsToMode(record, "outreach")));
     this.outreachPeopleRecords.set(outreachPeople.filter((record) => this.recordBelongsToMode(record, "outreach")));
     this.outreachCompanyRecords.set(outreachCompanies.filter((record) => this.recordBelongsToMode(record, "outreach")));
@@ -1168,6 +1186,64 @@ export class AppComponent {
       await this.selectRecordById(updated.id, false);
     } catch (error) {
       this.saveError.set(error instanceof Error ? error.message : "Could not save record.");
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  createCoverLetterDraft(application: XrmRecord) {
+    const role = this.recordField(application, "role", application.displayName);
+    const company = this.recordField(application, "company", "Company");
+    this.coverLetterDraftRequest.set({
+      key: `${application.id}:${Date.now()}`,
+      applicationId: application.id,
+      title: `Cover Letter - ${company} Draft`,
+      version: "v1-draft",
+      company,
+      derivedFor: `${role} at ${company}`,
+      summary: `Draft cover letter for the ${role} application at ${company}.`,
+      body: `Dear ${company} hiring team,\n\nI am writing to apply for the ${role} role. [Add one concrete reason this role matches your experience.]\n\n[Add one brief, evidence-based example relevant to the job requirements.]\n\nThank you for your consideration.\n\nBest,\n[Your name]`,
+      editorInstructions: "Draft only. Replace bracketed guidance with verified details and review the complete letter before applying or sending."
+    });
+    this.selectedDetail.set(null);
+    this.detailError.set(null);
+    this.saveError.set(null);
+    this.selectNav("Documents");
+  }
+
+  async saveDocumentFromLibrary(request: DocumentSaveRequest) {
+    const { input, applicationId } = request;
+    this.saving.set(true);
+    this.saveError.set(null);
+    try {
+      const saved = input.recordId
+        ? await this.api.updateXrmRecord(input)
+        : await this.api.createXrmRecord(input);
+      if (applicationId && input.objectType === "cover_letter") {
+        await this.api.createXrmRelationship({
+          relationshipType: "application_uses_cover_letter",
+          sourceRecordId: applicationId,
+          targetRecordId: saved.id,
+          source: "web",
+          metadata: { draftOnly: true }
+        });
+        const application = await this.api.getXrmRecord(applicationId);
+        await this.api.updateXrmRecord({
+          objectType: application.objectType?.slug ?? "application",
+          recordId: application.id,
+          displayName: application.displayName,
+          ...(application.externalKey ? { externalKey: application.externalKey } : {}),
+          fields: { ...application.fields, coverLetterVersion: saved.displayName },
+          status: application.status,
+          source: application.source ?? "web",
+          metadata: application.metadata ?? null
+        });
+      }
+      await this.refresh();
+      this.savedDocumentId.set(saved.id);
+      this.coverLetterDraftRequest.set(null);
+    } catch (error) {
+      this.saveError.set(error instanceof Error ? error.message : "Could not save document.");
     } finally {
       this.saving.set(false);
     }
@@ -2106,6 +2182,8 @@ export class AppComponent {
                 ? "/jobs"
                 : slug === "job_contact"
                   ? "/contacts"
+                  : slug === "cv_version" || slug === "cover_letter"
+                    ? "/documents"
                   : "/settings/advanced";
     return `${path}?record=${encodeURIComponent(record.id)}`;
   }
@@ -2206,6 +2284,7 @@ export class AppComponent {
     if (path.startsWith("/companies") || path === "/records/company") return "Companies";
     if (path.startsWith("/applications") || path === "/records/application") return "Applications";
     if (path.startsWith("/jobs") || path === "/records/job") return "Jobs";
+    if (path.startsWith("/documents") || path === "/records/cv_version" || path === "/records/cover_letter") return "Documents";
     if (path.startsWith("/contacts") || path === "/records/job_contact") return "Contacts";
     if (path.startsWith("/settings/advanced") || path.startsWith("/views") || path.startsWith("/records") || path.startsWith("/timeline")) return "Advanced";
     if (path.startsWith("/settings")) return "Settings";

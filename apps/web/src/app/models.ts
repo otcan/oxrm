@@ -351,6 +351,7 @@ export type NavItem =
   | "Today"
   | "Applications"
   | "Jobs"
+  | "Documents"
   | "Contacts"
   | "Pipeline"
   | "People"

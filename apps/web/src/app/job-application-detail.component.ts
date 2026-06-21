@@ -42,7 +42,9 @@ type ApplicationDetailTab = "overview" | "documents" | "activity";
             <span>Cover letter</span>
             <strong>{{ field("coverLetterVersion", "Not prepared") }}</strong>
           </div>
-          <button type="button">Create draft</button>
+          <button type="button" [disabled]="saving" (click)="createCoverLetterDraft.emit(record)">
+            {{ saving ? "Creating…" : "Create draft" }}
+          </button>
         </div>
         @if (field("cvVersion", "") === "") {
           <p class="detail-note warn">No CV is linked to this application. Choose a CV before applying, or continue only after reviewing the risk.</p>
@@ -60,7 +62,9 @@ type ApplicationDetailTab = "overview" | "documents" | "activity";
 })
 export class JobApplicationDetailComponent {
   @Input({ required: true }) record!: XrmRecord;
+  @Input() saving = false;
   @Output() openCvLibrary = new EventEmitter<void>();
+  @Output() createCoverLetterDraft = new EventEmitter<XrmRecord>();
 
   tab: ApplicationDetailTab = "overview";
 

@@ -168,6 +168,19 @@ export class CrmApiService {
     });
   }
 
+  async createXrmRelationship(input: {
+    relationshipType: string;
+    sourceRecordId: string;
+    targetRecordId: string;
+    source?: string;
+    metadata?: Record<string, unknown>;
+  }) {
+    return this.request("/api/xrm/relationships", {
+      method: "POST",
+      body: JSON.stringify(cleanPayload(input))
+    });
+  }
+
   private async request<T>(path: string, init: RequestInit = {}) {
     const response = await fetch(path, {
       ...init,

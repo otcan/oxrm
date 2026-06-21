@@ -175,7 +175,9 @@ type DetailTab = "overview" | "draft" | "activity";
             } @else if (isApplicationRecord(selection.item)) {
               <oc-job-application-detail
                 [record]="selection.item"
+                [saving]="saving"
                 (openCvLibrary)="openCvLibrary.emit()"
+                (createCoverLetterDraft)="createCoverLetterDraft.emit($event)"
               />
 
               <details class="advanced-detail">
@@ -226,6 +228,7 @@ export class DetailDrawerComponent {
   @Output() dismiss = new EventEmitter<XrmRecord>();
   @Output() runJobAction = new EventEmitter<{ record: XrmRecord; action: JobWorkflowActionKey }>();
   @Output() openCvLibrary = new EventEmitter<void>();
+  @Output() createCoverLetterDraft = new EventEmitter<XrmRecord>();
 
   @ViewChild(LeadDetailComponent) leadDetail?: LeadDetailComponent;
   @ViewChild(TaskDetailComponent) taskDetail?: TaskDetailComponent;

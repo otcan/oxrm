@@ -79,6 +79,18 @@
         />
       }
 
+      @case ("Documents") {
+        <oc-job-documents-page
+          [cvs]="cvRecords()"
+          [coverLetters]="coverLetterRecords()"
+          [saving]="saving()"
+          [error]="saveError()"
+          [savedDocumentId]="savedDocumentId()"
+          [newCoverLetter]="coverLetterDraftRequest()"
+          (saveDocument)="saveDocumentFromLibrary($event)"
+        />
+      }
+
       @case ("Contacts") {
         <oc-job-contacts-page
           [search]="contactSearch()"
@@ -189,6 +201,7 @@
     @if (addApplicationOpen()) {
       <oc-add-application-modal
         [cvs]="cvRecords()"
+        [coverLetters]="coverLetterDrafts()"
         [prefill]="applicationPrefill()"
         (close)="closeAddApplication()"
         (createApplication)="createApplicationRecord($event)"
@@ -232,6 +245,7 @@
     (dismiss)="dismissDraft($event)"
     (runJobAction)="runJobActionFromRecord($event)"
     (openCvLibrary)="openCvLibrary()"
+    (createCoverLetterDraft)="createCoverLetterDraft($event)"
   />
 </oc-app-shell>
 }
