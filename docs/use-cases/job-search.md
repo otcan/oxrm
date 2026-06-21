@@ -10,7 +10,7 @@ interviews, referrals, and follow-ups from your own machine.
 ./oxrm reset
 ./oxrm start
 ./oxrm ready
-./oxrm demo job-search
+./oxrm seed job-search
 ./oxrm urls
 ./oxrm cli mcp:read crm://queue/today
 ./oxrm cli mcp:call xrm.run_view --input '{"key":"job_search.applications"}'

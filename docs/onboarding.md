@@ -17,9 +17,18 @@ Choose one workspace:
 Non-interactive examples:
 
 ```bash
-./oxrm init --template job-search
-./oxrm init --template outreach
-./oxrm init --template blank
+./oxrm init personal --template job-search --ports auto
+./oxrm init sales --template outreach --ports auto
+./oxrm init blank --template blank --ports auto
+```
+
+Print the actual local URLs and repair common Docker issues through the wrapper:
+
+```bash
+./oxrm urls
+./oxrm doctor
+./oxrm ports repair
+./oxrm repair
 ```
 
 ## Job search loop

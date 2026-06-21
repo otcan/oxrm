@@ -23,7 +23,9 @@ Common commands:
   status             Show containers
   urls               Print local URLs
   ports              Print local URLs and ports
+  ports repair       Reassign web/API/MCP ports when they are blocked
   doctor [--codex]   Check Docker, ports, instance config, and optionally Codex
+  repair             Repair ports, remove orphans, migrate, seed, restart, smoke
   ready              Run migrate and baseline seed
   upgrade            Backup, migrate, seed, restart, and smoke-test the instance
   demo [scenario]    Seed public-safe demo data: job-search, linkedin-outreach, or codex-demo
@@ -54,9 +56,10 @@ Examples:
   ./oxrm codex-demo --reset --check
   ./oxrm setup --demo none
   ./oxrm start
+  ./oxrm repair
   ./oxrm ready
-  ./oxrm demo
-  ./oxrm demo job-search
+  ./oxrm seed job-search
+  ./oxrm seed outreach --reset-demo
   ./oxrm test
   ./oxrm version
   ./oxrm cli mcp:tools
@@ -87,7 +90,9 @@ ensure_instance_env() {
   env_file="instances/${instance}.local.env"
   example_env_file="instances/${instance}.env.example"
   if [[ ! -f "$env_file" && -f "$example_env_file" ]]; then
-    run_instance init
+    OXRM_INIT_PORTS=auto run_instance init
+  elif [[ ! -f "$env_file" && -f "instances/demo.env.example" ]]; then
+    OXRM_INIT_PORTS=auto run_instance init
   fi
 }
 
@@ -128,7 +133,7 @@ parse_demo_option() {
 
 parse_init_option() {
   init_template="__unset"
-  init_ports="default"
+  init_ports="auto"
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --template|--profile)
@@ -221,6 +226,26 @@ normalize_init_template() {
   esac
 }
 
+normalize_demo_scenario() {
+  case "${1:-none}" in
+    none|blank|no-demo)
+      echo "none"
+      ;;
+    job|jobs|job-search|job_search)
+      echo "job-search"
+      ;;
+    outreach|crm|linkedin|linkedin-outreach|linkedin_outreach)
+      echo "linkedin-outreach"
+      ;;
+    codex|codex-demo|codex_demo)
+      echo "codex-demo"
+      ;;
+    *)
+      echo "$1"
+      ;;
+  esac
+}
+
 choose_init_template() {
   if [[ "$init_template" != "__unset" ]]; then
     normalize_init_template
@@ -268,8 +293,8 @@ Next:
   open the Web URL
   go to /start
 
-Codex prompt:
-  Ask Codex to inspect the Start page, the active playbook, sources, timers, queue, records, and draft-only suggestions. Do not send anything externally.
+Assistant prompt:
+  Ask your assistant to inspect the Start page, active playbook, sources, timers, queue, records, and draft-only suggestions. Do not send anything externally.
 EOF
 }
 
@@ -320,7 +345,7 @@ case "$command" in
     scenario="$(init_demo_scenario)"
     if [[ "$init_ports" == "auto" ]]; then
       OXRM_INIT_PORTS=auto run_instance init
-    elif [[ "$init_ports" == "default" ]]; then
+    elif [[ "$init_ports" == "default" || "$init_ports" == "static" ]]; then
       run_instance init
     else
       echo "Unknown ports mode: $init_ports" >&2
@@ -343,12 +368,13 @@ case "$command" in
   setup|install)
     parse_demo_option "$@"
     choose_setup_demo
+    demo_scenario="$(normalize_demo_scenario "$demo_scenario")"
     if ! valid_demo_scenario "$demo_scenario"; then
       echo "Unknown demo scenario: $demo_scenario" >&2
       echo "Use none, job-search, linkedin-outreach, or codex-demo." >&2
       exit 2
     fi
-    run_instance init
+    OXRM_INIT_PORTS=auto run_instance init
     if [[ "$demo_scenario" != none ]]; then
       ensure_instance_env
       run_instance up
@@ -376,14 +402,25 @@ case "$command" in
     run_instance ps
     ;;
   urls)
+    ensure_instance_env
     run_instance urls
     ;;
   ports)
-    run_instance ports
+    ensure_instance_env
+    if [[ "${1:-}" == "repair" ]]; then
+      shift
+      run_instance ports-repair "$@"
+    else
+      run_instance ports "$@"
+    fi
     ;;
   doctor)
     ensure_instance_env
     run_instance doctor "$@"
+    ;;
+  repair)
+    ensure_instance_env
+    run_instance repair "$@"
     ;;
   ready|bootstrap)
     run_instance migrate
@@ -407,16 +444,33 @@ case "$command" in
     run_instance migrate
     ;;
   seed)
+    scenario="none"
+    if [[ $# -gt 0 && "$1" != -* ]]; then
+      scenario="$1"
+      shift
+    fi
+    scenario="$(normalize_demo_scenario "$scenario")"
+    if ! valid_demo_scenario "$scenario"; then
+      echo "Unknown seed scenario: $scenario" >&2
+      echo "Use none, job-search, outreach, linkedin-outreach, or codex-demo." >&2
+      exit 2
+    fi
     run_instance seed
+    if [[ "$scenario" != none || " $* " == *" --reset-demo "* ]]; then
+      run_instance demo-seed "$scenario" "$@"
+    fi
     ;;
   demo|demo-seed)
-    scenario="${1:-job-search}"
+    scenario="$(normalize_demo_scenario "${1:-job-search}")"
+    if [[ $# -gt 0 ]]; then
+      shift
+    fi
     if ! valid_demo_scenario "$scenario"; then
       echo "Unknown demo scenario: $scenario" >&2
       echo "Use none, job-search, linkedin-outreach, or codex-demo." >&2
       exit 2
     fi
-    run_instance demo-seed "$scenario"
+    run_instance demo-seed "$scenario" "$@"
     ;;
   db-smoke)
     run_instance db-smoke
@@ -447,9 +501,9 @@ case "$command" in
       echo "$example_file already exists."
     else
       cp instances/demo.env.example "$example_file"
-      echo "Created $example_file. Edit ports and names before starting it."
+      echo "Created $example_file."
     fi
-    scripts/oxrm-instance "$new_instance" init
+    OXRM_INIT_PORTS=auto scripts/oxrm-instance "$new_instance" init
     ;;
   instance)
     if [[ $# -lt 2 ]]; then

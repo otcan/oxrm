@@ -121,24 +121,25 @@ Normal usage runs through Docker:
 ```bash
 ./oxrm start
 ./oxrm ready
-./oxrm demo job-search
+./oxrm seed job-search
 ./oxrm test
 ./oxrm urls
 ```
 
-Expected default local URLs:
+`./oxrm init` assigns local ports automatically. Print them with `./oxrm urls`:
 
 ```text
-Web: http://127.0.0.1:18290
-API health: http://127.0.0.1:18291/api/health
-MCP health: http://127.0.0.1:18292/health
+Web: http://127.0.0.1:<web-port>
+API health: http://127.0.0.1:<api-port>/api/health
+MCP health: http://127.0.0.1:<mcp-port>/health
 ```
 
 `./oxrm ready` runs migrations and baseline seed only. Demo records are opt-in:
 
 ```bash
-./oxrm demo job-search
-./oxrm demo linkedin-outreach
+./oxrm seed job-search
+./oxrm seed outreach
+./oxrm seed none --reset-demo
 ```
 
 Multiple instances are isolated by env file, Docker project name, ports, and
@@ -147,6 +148,15 @@ database volume:
 ```bash
 ./oxrm init client-a --template blank
 ./oxrm -i client-a urls
+```
+
+If ports or containers get into a bad state, use the repair flow before editing
+files by hand:
+
+```bash
+./oxrm doctor
+./oxrm ports repair
+./oxrm repair
 ```
 
 Use `./oxrm -i <instance> upgrade` for repeatable updates. It backs up, verifies

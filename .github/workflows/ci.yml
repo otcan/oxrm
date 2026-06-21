@@ -33,7 +33,7 @@ jobs:
         run: pnpm build
 
       - name: Check shell scripts
-        run: bash -n oxrm ocrm scripts/oxrm-instance scripts/oxrm-internal scripts/codex-demo.sh scripts/deploy-live-demo scripts/smoke-user-journey.sh scripts/check-workspace-mode-ui.sh
+        run: bash -n oxrm ocrm scripts/oxrm-instance scripts/oxrm-internal scripts/codex-demo.sh scripts/deploy-live-demo scripts/smoke-user-journey.sh scripts/smoke-runtime-repair.sh scripts/check-workspace-mode-ui.sh
 
       - name: Launch naming and docs guard
         run: |
@@ -57,6 +57,9 @@ jobs:
 
       - name: Workspace mode UI guard
         run: bash scripts/check-workspace-mode-ui.sh
+
+      - name: Runtime repair smoke
+        run: bash scripts/smoke-runtime-repair.sh
 
       - name: Check built package exports
         run: |
@@ -116,6 +119,11 @@ jobs:
           ./oxrm cli health
           ./oxrm tools
           ./oxrm cli mcp:read crm://queue/today
+
+      - name: Demo reset seed smoke
+        run: |
+          ./oxrm seed none --reset-demo
+          ./oxrm cli testing:synthetic
 
       - name: Fresh non-demo user journey smoke
         run: bash scripts/smoke-user-journey.sh

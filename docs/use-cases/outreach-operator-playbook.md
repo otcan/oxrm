@@ -9,7 +9,7 @@ git clone https://github.com/otcan/oxrm.git
 cd oxrm
 ./oxrm start
 ./oxrm ready
-./oxrm demo linkedin-outreach
+./oxrm seed outreach
 ./oxrm urls
 ```
 

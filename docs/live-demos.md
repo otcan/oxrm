@@ -2,8 +2,8 @@
 
 oXRM has two continuously deployed demo instances:
 
-- `https://job-search-demo.oxrm.orkestr.de`: seeded with `./oxrm demo job-search`
-- `https://linkedin-outreach-demo.oxrm.orkestr.de`: seeded with `./oxrm demo linkedin-outreach`
+- `https://job-search-demo.oxrm.orkestr.de`: seeded with `./oxrm seed job-search`
+- `https://linkedin-outreach-demo.oxrm.orkestr.de`: seeded with `./oxrm seed outreach`
 
 Both are deployed by the `deploy-live-demos` job in CI after static checks,
 Docker demo smoke, and proxy validation pass on `main`.

@@ -12,6 +12,8 @@ Commands:
   down          Stop the instance
   doctor        Check Docker, ports, instance config, and optionally Codex
   ports         Print host ports used by this instance
+  ports-repair  Reassign web/API/MCP ports if blocked by another process
+  repair        Repair ports, remove orphans, migrate, seed, restart, smoke
   reset         Stop containers and delete local Docker data for the instance
   ps            Show containers
   logs [svc]    Follow logs
@@ -71,6 +73,10 @@ port_in_use() {
   return 1
 }
 
+docker_daemon_ok() {
+  command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1
+}
+
 pick_port_base() {
   local base
   for _ in $(seq 1 100); do
@@ -86,6 +92,12 @@ pick_port_base() {
   exit 1
 }
 
+pick_port_triplet() {
+  local base
+  base="$(pick_port_base)"
+  printf '%s %s %s\n' "$base" "$((base + 1))" "$((base + 2))"
+}
+
 set_env_value() {
   local file="$1"
   local key="$2"
@@ -95,6 +107,20 @@ set_env_value() {
   else
     printf '%s=%s\n' "$key" "$value" >>"$file"
   fi
+}
+
+update_runtime_urls() {
+  set_env_value "$env_file" OXRM_API_URL "http://127.0.0.1:${HOST_API_PORT}"
+  set_env_value "$env_file" OXRM_MCP_URL "http://127.0.0.1:${HOST_MCP_PORT}/mcp"
+  set_env_value "$env_file" CRM_API_URL "http://127.0.0.1:${HOST_API_PORT}"
+  set_env_value "$env_file" CRM_MCP_URL "http://127.0.0.1:${HOST_MCP_PORT}/mcp"
+}
+
+write_public_ports() {
+  set_env_value "$env_file" HOST_WEB_PORT "$HOST_WEB_PORT"
+  set_env_value "$env_file" HOST_API_PORT "$HOST_API_PORT"
+  set_env_value "$env_file" HOST_MCP_PORT "$HOST_MCP_PORT"
+  update_runtime_urls
 }
 
 render_local_env() {
@@ -139,10 +165,10 @@ render_local_env() {
   set_env_value "$env_file" HOST_API_PORT "$api_port"
   set_env_value "$env_file" HOST_MCP_PORT "$mcp_port"
   sed -i -E '/^HOST_POSTGRES_PORT=/d; /^HOST_REDIS_PORT=/d' "$env_file"
-  set_env_value "$env_file" OXRM_API_URL "http://127.0.0.1:${api_port}"
-  set_env_value "$env_file" OXRM_MCP_URL "http://127.0.0.1:${mcp_port}/mcp"
-  set_env_value "$env_file" CRM_API_URL "http://127.0.0.1:${api_port}"
-  set_env_value "$env_file" CRM_MCP_URL "http://127.0.0.1:${mcp_port}/mcp"
+  HOST_WEB_PORT="$web_port"
+  HOST_API_PORT="$api_port"
+  HOST_MCP_PORT="$mcp_port"
+  update_runtime_urls
   set_env_value "$env_file" BACKUP_GITHUB_REPO ""
   set_env_value "$env_file" BACKUP_GITHUB_TOKEN ""
   set_env_value "$env_file" BACKUP_WORKSPACE ".backups/${instance}"
@@ -493,9 +519,162 @@ preflight_public_ports() {
   done
   if [[ "$failures" -gt 0 ]]; then
     echo "" >&2
-    echo "Choose another instance/port set or stop the process using the port." >&2
+    echo "Repair with: ./oxrm -i ${instance} ports repair" >&2
+    echo "Or run the full repair flow: ./oxrm -i ${instance} repair" >&2
     echo "Inspect ports with: ./oxrm -i ${instance} doctor" >&2
     exit 1
+  fi
+}
+
+public_port_conflict_count() {
+  local failures=0
+  local entries=(
+    "Web:${HOST_WEB_PORT}"
+    "API:${HOST_API_PORT}"
+    "MCP:${HOST_MCP_PORT}"
+  )
+  for entry in "${entries[@]}"; do
+    local port="${entry#*:}"
+    if port_in_use "$port" && ! project_owns_port "$port"; then
+      failures=$((failures + 1))
+    fi
+  done
+  printf '%s' "$failures"
+}
+
+repair_public_ports() {
+  local force=false
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --force)
+        force=true
+        ;;
+      *)
+        echo "Unknown ports repair option: $1" >&2
+        exit 2
+        ;;
+    esac
+    shift
+  done
+
+  local conflicts
+  conflicts="$(public_port_conflict_count)"
+  if [[ "$conflicts" == "0" && "$force" == false ]]; then
+    echo "No port repair needed for instance '${instance}'."
+    print_urls
+    return
+  fi
+
+  local old_web="$HOST_WEB_PORT"
+  local old_api="$HOST_API_PORT"
+  local old_mcp="$HOST_MCP_PORT"
+  read -r HOST_WEB_PORT HOST_API_PORT HOST_MCP_PORT <<<"$(pick_port_triplet)"
+  write_public_ports
+
+  echo "Reassigned public ports for '${instance}':"
+  echo "  Web: ${old_web} -> ${HOST_WEB_PORT}"
+  echo "  API: ${old_api} -> ${HOST_API_PORT}"
+  echo "  MCP: ${old_mcp} -> ${HOST_MCP_PORT}"
+  echo ""
+  print_urls
+}
+
+clean_orphans() {
+  if has_compose; then
+    compose down --remove-orphans >/dev/null 2>&1 || true
+  else
+    docker ps -a --filter "name=${project}-" --filter "status=exited" -q 2>/dev/null | xargs -r docker rm >/dev/null 2>&1 || true
+  fi
+}
+
+required_env_keys() {
+  cat <<'EOF'
+POSTGRES_DB
+POSTGRES_USER
+POSTGRES_PASSWORD
+HOST_WEB_PORT
+HOST_API_PORT
+HOST_MCP_PORT
+EOF
+}
+
+repair_env_defaults() {
+  local changed=false
+  if [[ -z "${OXRM_API_URL:-}" ]]; then
+    set_env_value "$env_file" OXRM_API_URL "http://127.0.0.1:${HOST_API_PORT}"
+    OXRM_API_URL="http://127.0.0.1:${HOST_API_PORT}"
+    changed=true
+  fi
+  if [[ -z "${OXRM_MCP_URL:-}" ]]; then
+    set_env_value "$env_file" OXRM_MCP_URL "http://127.0.0.1:${HOST_MCP_PORT}/mcp"
+    OXRM_MCP_URL="http://127.0.0.1:${HOST_MCP_PORT}/mcp"
+    changed=true
+  fi
+  if [[ -z "${CRM_API_URL:-}" ]]; then
+    set_env_value "$env_file" CRM_API_URL "${OXRM_API_URL}"
+    CRM_API_URL="$OXRM_API_URL"
+    changed=true
+  fi
+  if [[ -z "${CRM_MCP_URL:-}" ]]; then
+    set_env_value "$env_file" CRM_MCP_URL "${OXRM_MCP_URL}"
+    CRM_MCP_URL="$OXRM_MCP_URL"
+    changed=true
+  fi
+  if [[ -z "${BACKUP_WORKSPACE:-}" ]]; then
+    set_env_value "$env_file" BACKUP_WORKSPACE ".backups/${instance}"
+    BACKUP_WORKSPACE=".backups/${instance}"
+    changed=true
+  fi
+  if [[ "$changed" == true ]]; then
+    echo "Backfilled missing local env defaults in ${env_file}."
+  fi
+}
+
+validate_instance_env() {
+  local failures=0
+  local key
+  while read -r key; do
+    if [[ -z "${!key:-}" ]]; then
+      echo "  ${key}: missing"
+      failures=$((failures + 1))
+    else
+      echo "  ${key}: set"
+    fi
+  done < <(required_env_keys)
+
+  if [[ -z "${OXRM_API_URL:-}" && -n "${CRM_API_URL:-}" ]]; then
+    echo "  OXRM_API_URL: missing, legacy CRM_API_URL fallback is set"
+  elif [[ -z "${OXRM_API_URL:-}" ]]; then
+    echo "  OXRM_API_URL: missing, repair will backfill from HOST_API_PORT"
+  else
+    echo "  OXRM_API_URL: set"
+  fi
+
+  if [[ -z "${OXRM_MCP_URL:-}" && -n "${CRM_MCP_URL:-}" ]]; then
+    echo "  OXRM_MCP_URL: missing, legacy CRM_MCP_URL fallback is set"
+  elif [[ -z "${OXRM_MCP_URL:-}" ]]; then
+    echo "  OXRM_MCP_URL: missing, repair will backfill from HOST_MCP_PORT"
+  else
+    echo "  OXRM_MCP_URL: set"
+  fi
+
+  if [[ "${POSTGRES_PASSWORD:-}" == "change-me" || "${POSTGRES_PASSWORD:-}" == "oxrm" || -z "${POSTGRES_PASSWORD:-}" ]]; then
+    if [[ "${NODE_ENV:-development}" == "production" ]]; then
+      echo "  POSTGRES_PASSWORD: weak or placeholder"
+      failures=$((failures + 1))
+    else
+      echo "  POSTGRES_PASSWORD: weak development password; safe only for disposable local data"
+    fi
+  fi
+
+  return "$failures"
+}
+
+print_disk_status() {
+  if command -v df >/dev/null 2>&1; then
+    df -Pk "$repo_root" | awk 'NR == 2 { printf "Disk: %s KB available at %s\n", $4, $6 }'
+  else
+    echo "Disk: df not available"
   fi
 }
 
@@ -520,7 +699,7 @@ print_urls() {
   printf 'MCP health: %s\n' "http://127.0.0.1:${HOST_MCP_PORT}/health"
   printf 'MCP endpoint: %s\n' "http://127.0.0.1:${HOST_MCP_PORT}/mcp"
   if [[ "${HOST_MCP_PORT}" != "18182" ]]; then
-    printf '\nCodex MCP registration URL: %s\n' "http://127.0.0.1:${HOST_MCP_PORT}/mcp"
+    printf '\nAssistant MCP registration URL: %s\n' "http://127.0.0.1:${HOST_MCP_PORT}/mcp"
   fi
 }
 
@@ -621,6 +800,11 @@ run_doctor() {
   echo ""
   if command -v docker >/dev/null 2>&1; then
     echo "Docker: $(docker --version)"
+    if docker_daemon_ok; then
+      echo "Docker daemon: running"
+    else
+      echo "Docker daemon: not reachable"
+    fi
   else
     echo "Docker: not installed"
   fi
@@ -628,6 +812,14 @@ run_doctor() {
     echo "Compose: $(docker compose version --short 2>/dev/null || docker compose version)"
   else
     echo "Compose: not installed; direct Docker fallback will be used"
+  fi
+  print_disk_status
+  echo ""
+  echo "Config:"
+  if validate_instance_env; then
+    echo "  Config status: ok"
+  else
+    echo "  Config status: needs attention"
   fi
   echo ""
   echo "Ports:"
@@ -645,10 +837,71 @@ run_doctor() {
       echo "  ${label} ${port}: available"
     fi
   done
+  if [[ "$(public_port_conflict_count)" != "0" ]]; then
+    echo ""
+    echo "Port repair:"
+    echo "  ./oxrm -i ${instance} ports repair"
+  fi
+  echo ""
+  echo "Repair:"
+  echo "  ./oxrm -i ${instance} repair"
+  echo ""
   print_urls
   if [[ "$include_codex" == true ]]; then
     codex_doctor
   fi
+}
+
+run_repair() {
+  local skip_smoke=false
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --skip-smoke)
+        skip_smoke=true
+        ;;
+      *)
+        echo "Unknown repair option: $1" >&2
+        exit 2
+        ;;
+    esac
+    shift
+  done
+
+  echo "Repairing oXRM instance '${instance}'..."
+  if ! docker_daemon_ok; then
+    echo "Docker is not reachable. Start Docker and rerun: ./oxrm -i ${instance} repair" >&2
+    exit 1
+  fi
+
+  if [[ "$(public_port_conflict_count)" != "0" ]]; then
+    repair_public_ports
+  fi
+
+  repair_env_defaults
+
+  clean_orphans
+
+  if has_compose; then
+    compose_up_idempotent
+    compose exec -T api scripts/oxrm-internal db migrate
+    compose exec -T api scripts/oxrm-internal db seed
+    if [[ "$skip_smoke" == false ]]; then
+      compose_wait_for_app
+      compose_cli health
+    fi
+  else
+    direct_up_idempotent
+    direct_exec_node scripts/oxrm-internal db migrate
+    direct_exec_node scripts/oxrm-internal db seed
+    if [[ "$skip_smoke" == false ]]; then
+      direct_wait_for_app
+      direct_cli health
+    fi
+  fi
+
+  echo ""
+  echo "Repair complete."
+  print_urls
 }
 
 parse_upgrade_flags() {
@@ -831,6 +1084,12 @@ case "$command" in
     ;;
   ports)
     print_urls
+    ;;
+  ports-repair)
+    repair_public_ports "$@"
+    ;;
+  repair)
+    run_repair "$@"
     ;;
   logs)
     if has_compose; then

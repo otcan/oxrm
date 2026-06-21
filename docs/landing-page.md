@@ -35,7 +35,7 @@ git clone https://github.com/otcan/oxrm.git
 cd oxrm
 ./oxrm start
 ./oxrm ready
-./oxrm demo job-search
+./oxrm seed job-search
 ./oxrm test
 ./oxrm urls
 ```

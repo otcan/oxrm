@@ -20,11 +20,18 @@ import { and, eq, inArray, like, or } from "drizzle-orm";
 
 type DemoScenario = "none" | "job-search" | "linkedin-outreach" | "codex-demo";
 
-const scenarioArg = process.argv.slice(2).find((arg) => arg !== "--");
+const args = process.argv.slice(2).filter((arg) => arg !== "--");
+const resetDemo = args.includes("--reset-demo");
+const scenarioArg = args.find((arg) => arg !== "--reset-demo");
 const scenario = normalizeScenario(scenarioArg ?? process.env.OXRM_DEMO_SCENARIO ?? "none");
 
 if (scenario === "none") {
-  console.log(JSON.stringify({ status: "ok", scenario, message: "No demo data requested." }, null, 2));
+  if (resetDemo) {
+    await cleanupKnownDemoData();
+    console.log(JSON.stringify({ status: "ok", scenario, resetDemo, message: "Known demo data removed." }, null, 2));
+  } else {
+    console.log(JSON.stringify({ status: "ok", scenario, resetDemo, message: "No demo data requested." }, null, 2));
+  }
 } else if (scenario === "job-search") {
   await cleanupKnownDemoData();
   process.env.OXRM_INTERNAL_DEMO_SCENARIO = "job-search";

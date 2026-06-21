@@ -20,19 +20,25 @@ Start Docker Engine, then rerun:
 
 ## Port Already In Use
 
-Print the configured ports:
+Inspect the instance first:
 
 ```bash
+./oxrm doctor
+```
+
+If another process owns one of the web/API/MCP ports, reassign only the public
+ports and keep the database volume:
+
+```bash
+./oxrm ports repair
+./oxrm start
 ./oxrm urls
 ```
 
-For the demo instance, edit `instances/demo.local.env` and change the
-`HOST_*_PORT` values, then restart:
+For a full safe recovery, use:
 
 ```bash
-./oxrm stop
-./oxrm start
-./oxrm ready
+./oxrm repair
 ```
 
 ## Stale Containers Or Broken Demo Data
@@ -45,14 +51,20 @@ Stop the instance without deleting data:
 ./oxrm test
 ```
 
-For a disposable local demo, reset the selected instance. This deletes the
+If Docker containers, env defaults, or ports are inconsistent, prefer repair:
+
+```bash
+./oxrm repair
+```
+
+For a disposable local demo only, reset the selected instance. This deletes the
 instance's local Docker data:
 
 ```bash
 ./oxrm reset
 ./oxrm start
 ./oxrm ready
-./oxrm demo job-search
+./oxrm seed job-search
 ./oxrm test
 ```
 
@@ -87,6 +99,12 @@ prefer `./oxrm urls` and the Dockerized CLI.
 ```
 
 If the instance is disposable, use `./oxrm reset` and rerun the demo path.
+
+To remove known synthetic demo data without deleting the database volume:
+
+```bash
+./oxrm seed none --reset-demo
+```
 
 ## Backup Verification
 

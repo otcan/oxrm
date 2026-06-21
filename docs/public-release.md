@@ -32,8 +32,8 @@ Use this checklist for publication readiness and each tagged release.
 ## Verification
 
 - [ ] `./oxrm ready`
-- [ ] `./oxrm demo job-search`
-- [ ] `./oxrm demo linkedin-outreach`
+- [ ] `./oxrm seed job-search`
+- [ ] `./oxrm seed outreach`
 - [ ] `./oxrm test`
 - [ ] `./oxrm upgrade --skip-backup` on a disposable local instance.
 - [ ] `./oxrm upgrade` on any production-bound instance with backup credentials configured.
@@ -45,7 +45,7 @@ Use this checklist for publication readiness and each tagged release.
 - [ ] `./oxrm cli mcp:call crm.search_leads --input '{"query":"founder"}'`
 - [ ] `./ocrm version` prints a deprecation warning and delegates successfully.
 - [ ] `xrm.list_views` returns outreach and job-search views.
-- [ ] `xrm.run_view` returns rows for `job_search.applications` after `./oxrm demo job-search`.
+- [ ] `xrm.run_view` returns rows for `job_search.applications` after `./oxrm seed job-search`.
 - [ ] Generic record timeline verification covers a job-search application with linked task and event.
 - [ ] Contributor CI is green for `pnpm install --frozen-lockfile`, `pnpm typecheck`, `pnpm build`, migration generation, and Compose config.
 - [ ] Backup verification is green for any production-bound instance.

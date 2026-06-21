@@ -7,7 +7,7 @@ Use this checklist when preparing a clean public repository from a private worki
 1. Create a fresh repository with no private commit history.
 2. Copy the current working tree into the fresh repository, excluding ignored files.
 3. Run the public release scan in [privacy-and-safe-data.md](privacy-and-safe-data.md).
-4. Run `./oxrm ready`, `./oxrm demo job-search`, and `./oxrm test` for the public Docker path.
+4. Run `./oxrm ready`, `./oxrm seed job-search`, and `./oxrm test` for the public Docker path.
 5. Confirm contributor CI is green for install, typecheck, build, migration generation, and Compose config.
 6. Start the demo instance and run the demo smoke path from [instances.md](instances.md).
 7. Commit the sanitized tree as the first public commit.

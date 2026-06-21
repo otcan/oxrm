@@ -19,8 +19,7 @@ instances/demo.env.example
 Create the private runtime env:
 
 ```bash
-./oxrm setup
-$EDITOR instances/demo.local.env
+./oxrm init demo --template blank
 ```
 
 Print the URLs assigned to the Docker instance:
@@ -34,20 +33,42 @@ Common Docker instance commands:
 ```bash
 ./oxrm start
 ./oxrm ready
-./oxrm demo job-search
+./oxrm seed job-search
 ./oxrm test
 ./oxrm tools
+./oxrm doctor
+./oxrm repair
 ./oxrm backup
 ./oxrm upgrade
 ```
 
-To add another local instance, run `./oxrm new <name>`, choose unique host ports, then use `./oxrm -i <name> start`. Treat tracked example files as public-safe scaffolding only; live `.local.env` files remain private and ignored.
+To add another local instance, run `./oxrm init <name> --template blank`.
+Ports are assigned automatically and stored in `instances/<name>.local.env`.
+Use `./oxrm -i <name> urls` to print them. Treat tracked example files as
+public-safe scaffolding only; live `.local.env` files remain private and
+ignored.
 
 Keep per-instance `.local.env` files private. They may contain database passwords, backup repository names, and GitHub tokens.
 
-`seed` creates baseline product configuration. `demo-seed` adds one explicit
-synthetic scenario, either `job-search` or `linkedin-outreach`, that is safe to
-use in screenshots, smoke tests, and public walkthroughs.
+`seed` creates baseline product configuration. `seed job-search` and
+`seed outreach` add one explicit synthetic scenario that is safe to use in
+screenshots, smoke tests, and public walkthroughs. `seed none --reset-demo`
+removes known synthetic demo records without deleting the database volume.
+
+## Repair
+
+Use repair before editing env files manually:
+
+```bash
+./oxrm doctor
+./oxrm ports repair
+./oxrm repair
+```
+
+`ports repair` changes only the web/API/MCP ports and rewrites the local API/MCP
+URLs. `repair` backfills missing local env defaults, repairs blocked ports,
+removes Compose orphans, starts the stack, runs migrations, runs the baseline
+seed, and checks health.
 
 Lead and event writes normalize people, companies, domains, and email addresses before inserting records. Use `./oxrm cli -- event:record ...` for idempotent message/email/connection-request timeline writes, and `./oxrm tools` to inspect the MCP task, identity, and event tools exposed to agents.
 

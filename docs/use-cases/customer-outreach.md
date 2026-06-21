@@ -9,7 +9,7 @@ machine.
 ```bash
 ./oxrm start
 ./oxrm ready
-./oxrm demo linkedin-outreach
+./oxrm seed outreach
 ./oxrm cli mcp:call crm.search_leads --input '{"query":"founder"}'
 ./oxrm cli mcp:read crm://queue/today
 ```

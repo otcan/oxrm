@@ -9,7 +9,7 @@ walkthroughs.
 ./oxrm reset
 ./oxrm start
 ./oxrm ready
-./oxrm demo job-search
+./oxrm seed job-search
 ./oxrm test
 ./oxrm urls
 ```

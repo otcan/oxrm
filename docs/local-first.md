@@ -22,8 +22,8 @@ Do not expose the API publicly without authentication and a reverse proxy.
 To load public-safe sample data, choose exactly one scenario:
 
 ```bash
-./oxrm demo job-search
-./oxrm demo linkedin-outreach
+./oxrm seed job-search
+./oxrm seed outreach
 ```
 
 Keep `instances/*.local.env`, database dumps, logs, backups, and connector
