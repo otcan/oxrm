@@ -36,8 +36,8 @@ cd oxrm
 ./oxrm init personal --template job-search --ports auto
 ```
 
-Open the Web URL printed by `./oxrm urls`, then go to `/start` for the guided
-setup checklist.
+Open the Web URL printed by `./oxrm -i personal urls`, then go to `/start` for
+the guided setup checklist.
 
 For a blank local workspace instead of demo records:
 
@@ -71,6 +71,8 @@ follow-up tasks.
 
 ```bash
 ./oxrm init --template job-search
+./oxrm cli setup:job-search
+./oxrm cli setup:job-search:get
 ./oxrm cli mcp:call xrm.run_view --input '{"key":"job_search.applications"}'
 ./oxrm cli mcp:read crm://queue/today
 ```
@@ -78,6 +80,9 @@ follow-up tasks.
 The job-search structure is XRM-native: job postings, job fits, applications,
 CV versions, cover letters, communication ledger entries, and action
 suggestions are records with relationships, tasks, events, and files.
+
+Open `/setup/job-search` to configure sources, CV policy, cover-letter policy,
+fit scoring, timers, and the agent playbook.
 
 ## Customer Outreach Workflow
 
@@ -182,15 +187,9 @@ still supported beside `OXRM_API_URL` and `OXRM_MCP_URL`.
 
 ## Docs
 
-- [Onboarding](docs/onboarding.md)
-- [Assistant-specific Codex demo](docs/codex-demo.md)
-- [Job search](docs/use-cases/job-search.md)
-- [Customer outreach](docs/use-cases/customer-outreach.md)
-- [Self-hosted outreach](docs/self-hosted-outreach.md)
-- [Local-first usage](docs/local-first.md)
-- [MCP](docs/mcp.md)
-- [Live demos](docs/live-demos.md)
-- [Troubleshooting](docs/troubleshooting.md)
+Start with [Start here](docs/start-here.md), [Onboarding](docs/onboarding.md), [Job search setup](docs/onboarding/job-search-setup.md), [Outreach setup](docs/onboarding/outreach-setup.md), and [XRM model](docs/xrm-model.md).
+Assistant docs: [Agent job search loop](docs/agent-job-search-loop.md), [Codex demo](docs/codex-demo.md), and [MCP](docs/mcp.md).
+Use cases: [Job search](docs/use-cases/job-search.md) and [Customer outreach](docs/use-cases/customer-outreach.md). Operations: [Live demos](docs/live-demos.md) and [Troubleshooting](docs/troubleshooting.md).
 
 `./ocrm` is a deprecated compatibility wrapper around `./oxrm` for one release.
 New automation should call `./oxrm`.

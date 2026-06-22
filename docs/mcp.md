@@ -22,11 +22,17 @@ for the authoritative URL when ports are customized.
 - `crm://backups/latest`: latest backup health metadata.
 - `crm://leads/{leadId}`: one lead record.
 - `xrm://records/{recordId}`: one generic oXRM record.
+- `oxrm://setup/job-search`: job-search setup, sources, timers, policies, and
+  blueprint state.
+- `oxrm://playbook/job-search`: operator and agent instructions for running the
+  job-search loop.
 
 Example:
 
 ```bash
 ./oxrm cli mcp:read crm://queue/today
+./oxrm cli mcp:read oxrm://setup/job-search
+./oxrm cli mcp:read oxrm://playbook/job-search
 ```
 
 ## Read Tools
@@ -57,6 +63,7 @@ Example:
 - `crm.run_view`
 - `xrm.list_views`
 - `xrm.run_view`
+- `job_search.get_setup`
 
 ## Write Tools
 
@@ -89,10 +96,13 @@ the public demo.
 - `xrm.create_relationship_type`
 - `xrm.link_records`
 - `xrm.create_view`
+- `job_search.configure_setup`
 
 ## Agent Expectations
 
 - Read before writing.
+- Read `oxrm://setup/job-search` and `oxrm://playbook/job-search` before
+  changing job-search records.
 - Prefer `crm://queue/today`, saved views, and search tools for context.
 - Record external actions once, using idempotency keys where the tool supports
   them.
@@ -129,6 +139,12 @@ Run a saved view:
 
 ```bash
 ./oxrm cli mcp:call xrm.run_view --input '{"key":"job_search.applications"}'
+```
+
+Read the job-search setup through a tool:
+
+```bash
+./oxrm cli mcp:call job_search.get_setup --input '{}'
 ```
 
 Record a note:

@@ -5,11 +5,22 @@ oXRM has two continuously deployed demo instances:
 - `https://job-search-demo.oxrm.orkestr.de`: seeded with `./oxrm seed job-search`
 - `https://linkedin-outreach-demo.oxrm.orkestr.de`: seeded with `./oxrm seed outreach`
 
+Useful public routes:
+
+- `https://job-search-demo.oxrm.orkestr.de/setup/job-search`
+- `https://job-search-demo.oxrm.orkestr.de/applications`
+- `https://job-search-demo.oxrm.orkestr.de/api/setup/job-search`
+- `https://linkedin-outreach-demo.oxrm.orkestr.de/pipeline`
+- `https://linkedin-outreach-demo.oxrm.orkestr.de/today`
+
 Both are deployed by the `deploy-live-demos` job in CI after static checks,
 Docker demo smoke, and proxy validation pass on `main`.
 
 The live demos intentionally do not combine scenarios. Each public target gets
 one dataset so regressions are visible.
+
+CI verifies the public bundle, workspace mode, scenario separation, and
+job-search setup API after every successful deploy from `main`.
 
 The public runtime is lean: Caddy serves the built Angular files, and each demo
 runs only Postgres plus the API container.

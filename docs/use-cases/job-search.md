@@ -11,6 +11,7 @@ interviews, referrals, and follow-ups from your own machine.
 ./oxrm start
 ./oxrm ready
 ./oxrm seed job-search
+./oxrm cli setup:job-search
 ./oxrm cli setup:job-search:get
 ./oxrm urls
 ./oxrm cli mcp:read oxrm://setup/job-search
@@ -27,6 +28,8 @@ interviews, referrals, and follow-ups from your own machine.
 - see multiple synthetic applications across stages
 - see incoming job alerts and jobs they map to
 - see CV versions and cover letters linked to applications
+- open `/setup/job-search` and see the sources, fit policy, timers, and
+  playbook the agent should follow
 - click an application row in the web UI and inspect related job, contact,
   documents, tasks, and timeline events
 - draft a follow-up or application-review note, but do not send or upload
@@ -57,3 +60,6 @@ Ask Codex to:
 - email and recruiter messages
 - approval or rejection of agent suggestions
 - recording what actually happened externally
+
+See [Job search setup](../onboarding/job-search-setup.md) for the full setup
+contract and [Agent job search loop](../agent-job-search-loop.md) for prompts.

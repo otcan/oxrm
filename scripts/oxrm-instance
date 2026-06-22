@@ -221,6 +221,36 @@ compose() {
   docker compose --env-file "$env_file" -p "$project" "$@"
 }
 
+build_node_image() {
+  local tag="$1"
+  if docker build -t "$tag" -f infra/docker/node.Dockerfile .; then
+    return
+  fi
+  echo "Docker build failed; retrying with host networking for Docker registry DNS." >&2
+  docker build --network host -t "$tag" -f infra/docker/node.Dockerfile .
+}
+
+compose_service_image() {
+  printf '%s-%s:latest' "$project" "$1"
+}
+
+compose_build_node_images() {
+  if compose build; then
+    return
+  fi
+
+  echo "Compose build failed; retrying one app image build with host networking for Docker registry DNS." >&2
+  local base_service="${node_services[0]}"
+  local base_image
+  base_image="$(compose_service_image "$base_service")"
+  docker build --network host -t "$base_image" -f infra/docker/node.Dockerfile .
+
+  local service
+  for service in "${node_services[@]:1}"; do
+    docker tag "$base_image" "$(compose_service_image "$service")"
+  done
+}
+
 has_compose() {
   docker compose version >/dev/null 2>&1
 }
@@ -303,7 +333,7 @@ direct_run_node_service() {
 
 direct_up() {
   ensure_network
-  docker build -t "$image" -f infra/docker/node.Dockerfile . >/dev/null
+  build_node_image "$image"
 
   remove_container postgres
   docker run -d \
@@ -710,7 +740,7 @@ compose_up_idempotent() {
     return
   fi
   preflight_public_ports
-  if ! compose up -d --build; then
+  if ! compose_build_node_images || ! compose up -d; then
     echo "" >&2
     echo "Startup failed for instance '${instance}'." >&2
     echo "Stopping newly-started app containers while preserving volumes." >&2
@@ -986,7 +1016,7 @@ compose_upgrade() {
 
   compose_stop_app_services
   if [[ "$upgrade_skip_build" == false ]]; then
-    compose build
+    compose_build_node_images
   fi
   compose_run_node scripts/oxrm-internal db migrate
   if [[ "$upgrade_skip_seed" == false ]]; then
@@ -1007,7 +1037,7 @@ compose_upgrade() {
 direct_upgrade() {
   ensure_network
   if ! docker image inspect "$image" >/dev/null 2>&1 && [[ "$upgrade_skip_build" == false ]]; then
-    docker build -t "$image" -f infra/docker/node.Dockerfile . >/dev/null
+    build_node_image "$image"
   fi
 
   if ! docker inspect "$(container_name postgres)" >/dev/null 2>&1 || ! docker inspect "$(container_name redis)" >/dev/null 2>&1; then
@@ -1024,7 +1054,7 @@ direct_upgrade() {
 
   direct_stop_app_services
   if [[ "$upgrade_skip_build" == false ]]; then
-    docker build -t "$image" -f infra/docker/node.Dockerfile . >/dev/null
+    build_node_image "$image"
   fi
   direct_exec_node scripts/oxrm-internal db migrate
   if [[ "$upgrade_skip_seed" == false ]]; then

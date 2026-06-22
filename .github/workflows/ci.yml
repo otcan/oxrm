@@ -46,7 +46,15 @@ jobs:
           test -f .codex/config.toml
           test -f AGENTS.md
           test -f docs/assets/oxrm-dashboard.png
+          test -f docs/start-here.md
+          test -f docs/xrm-model.md
+          test -f docs/onboarding/job-search-setup.md
+          test -f docs/onboarding/outreach-setup.md
+          test -f docs/agent-job-search-loop.md
+          test -f docs/live-demos.md
           test "$(wc -l < README.md)" -le 200
+          rg -n "oxrm://setup/job-search" docs/start-here.md docs/onboarding/job-search-setup.md docs/agent-job-search-loop.md docs/mcp.md
+          rg -n "./oxrm cli setup:job-search" README.md docs/start-here.md docs/onboarding.md docs/onboarding/job-search-setup.md
           ! rg -n "otcan/orkestr-crm|@orkestr-crm|scripts/crm|orkestr-crm|orkestr_crm|ORKESTR_HOST|ORKESTR_ADMIN|backups@orkestr" \
             --glob '!node_modules/**' \
             --glob '!apps/web/dist/**' \
@@ -339,18 +347,27 @@ jobs:
             done
 
             if [ "\${expected_mode}" = "job_search" ]; then
+              curl -fsS -H 'Cache-Control: no-cache' "https://\${host}/setup/job-search?deploy=\${OXRM_DEPLOY_GIT_SHA}" \
+                | grep -F "\${expected_main}" >/dev/null
+
               apps="\$(curl -fsS -H 'Cache-Control: no-cache' "https://\${host}/api/views/job_search.applications/run?limit=100&deploy=\${OXRM_DEPLOY_GIT_SHA}")"
               leads="\$(curl -fsS -H 'Cache-Control: no-cache' "https://\${host}/api/leads?limit=100&deploy=\${OXRM_DEPLOY_GIT_SHA}")"
+              setup="\$(curl -fsS -H 'Cache-Control: no-cache' "https://\${host}/api/setup/job-search?deploy=\${OXRM_DEPLOY_GIT_SHA}")"
               node -e '
                 const apps = JSON.parse(process.argv[1]);
                 const leads = JSON.parse(process.argv[2]);
+                const setup = JSON.parse(process.argv[3]);
                 const appCount = Array.isArray(apps.rows) ? apps.rows.length : 0;
                 const leadCount = Array.isArray(leads) ? leads.length : 0;
                 if (appCount < 1 || leadCount !== 0) {
                   console.error(JSON.stringify({ error: "job_search_public_data_mismatch", appCount, leadCount }, null, 2));
                   process.exit(1);
                 }
-              ' "\${apps}" "\${leads}"
+                if (!setup.configured || !Array.isArray(setup.sources) || setup.sources.length < 1) {
+                  console.error(JSON.stringify({ error: "job_search_setup_mismatch", setup }, null, 2));
+                  process.exit(1);
+                }
+              ' "\${apps}" "\${leads}" "\${setup}"
             else
               apps="\$(curl -fsS -H 'Cache-Control: no-cache' "https://\${host}/api/views/job_search.applications/run?limit=100&deploy=\${OXRM_DEPLOY_GIT_SHA}")"
               leads="\$(curl -fsS -H 'Cache-Control: no-cache' "https://\${host}/api/leads?limit=100&deploy=\${OXRM_DEPLOY_GIT_SHA}")"

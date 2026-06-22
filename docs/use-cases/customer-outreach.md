@@ -48,3 +48,6 @@ Ask Codex to:
 - email sending
 - approval or rejection of agent suggestions
 - recording what actually happened externally
+
+See [Outreach setup](../onboarding/outreach-setup.md) for the source, field,
+view, and daily-loop setup an assistant should follow before writing records.

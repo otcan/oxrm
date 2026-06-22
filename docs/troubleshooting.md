@@ -90,6 +90,26 @@ If ports were customized, use the API URL from `./oxrm urls`.
 The default demo MCP URL is `http://127.0.0.1:18292/mcp`, but scripts should
 prefer `./oxrm urls` and the Dockerized CLI.
 
+## Setup Command Not Found
+
+If `./oxrm cli setup:job-search:get` fails with an unknown command or a missing
+API route, the running containers are older than the checkout.
+
+```bash
+./oxrm upgrade --skip-backup
+./oxrm cli setup:job-search:get
+```
+
+For a disposable demo instance, rebuild from scratch:
+
+```bash
+./oxrm reset
+./oxrm start
+./oxrm ready
+./oxrm seed job-search
+./oxrm cli setup:job-search:get
+```
+
 ## Migration Or Seed Problems
 
 ```bash
@@ -104,6 +124,32 @@ To remove known synthetic demo data without deleting the database volume:
 
 ```bash
 ./oxrm seed none --reset-demo
+```
+
+## Docker Build DNS Fails
+
+If Docker cannot pull `node:22-bookworm-slim` or package metadata, inspect
+Docker DNS first. The local wrapper and live deploy script retry app image
+builds with host networking when the builder cannot resolve through Docker's
+internal DNS, but local Docker Desktop or Engine may still need a restart if
+the daemon itself cannot resolve registry names.
+
+```bash
+docker run --rm node:22-bookworm-slim node --version
+./oxrm start
+```
+
+`docker compose up -d --no-build` only restarts the previous image. Use it only
+when you are intentionally restoring a known-working runtime.
+
+## Job Search Setup Smoke
+
+Use this after setup, upgrades, or demo deploys:
+
+```bash
+./oxrm cli setup:job-search:get
+./oxrm cli mcp:read oxrm://setup/job-search
+./oxrm cli mcp:read oxrm://playbook/job-search
 ```
 
 ## Backup Verification

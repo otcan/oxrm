@@ -22,6 +22,8 @@ Non-interactive examples:
 ./oxrm init blank --template blank --ports auto
 ```
 
+Use `./oxrm -i <name> ...` after creating a named instance.
+
 Print the actual local URLs and repair common Docker issues through the wrapper:
 
 ```bash
@@ -41,6 +43,15 @@ Print the actual local URLs and repair common Docker issues through the wrapper:
 6. Review approval tasks before applying or sending externally.
 7. Record the external application, email, reply, rejection, interview, or follow-up.
 
+Run the setup flow:
+
+```bash
+./oxrm cli setup:job-search
+./oxrm cli setup:job-search:get
+```
+
+Then open `/setup/job-search`.
+
 ## Outreach loop
 
 1. Add lead sources: LinkedIn/Sales Navigator exports, CSVs, warm intros, inbound mail, website forms, or manual research.
@@ -59,3 +70,11 @@ update local records, and create tasks.
 Assistants should not send emails, LinkedIn messages, connection requests,
 applications, or uploads unless a human explicitly approves and performs or
 authorizes that external action.
+
+## Deeper docs
+
+- [Start here](start-here.md)
+- [Job search setup](onboarding/job-search-setup.md)
+- [Outreach setup](onboarding/outreach-setup.md)
+- [XRM model](xrm-model.md)
+- [Agent job search loop](agent-job-search-loop.md)

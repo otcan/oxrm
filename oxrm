@@ -281,6 +281,10 @@ init_demo_scenario() {
 
 print_init_next_steps() {
   scenario="$(init_demo_scenario)"
+  instance_flag=""
+  if [[ "$instance" != "demo" ]]; then
+    instance_flag="-i ${instance} "
+  fi
   cat <<EOF
 
 oXRM is initialized.
@@ -289,7 +293,7 @@ Template: ${init_template}
 Demo scenario: ${scenario}
 
 Next:
-  ./oxrm urls
+  ./oxrm ${instance_flag}urls
   open the Web URL
   go to /start
 
