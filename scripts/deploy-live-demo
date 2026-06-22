@@ -121,9 +121,13 @@ pnpm --filter @oxrm/web build
 
 compose_project="oxrm-public-${instance}"
 compose_file="infra/compose/docker-compose.public-demo.yml"
+api_image="${compose_project}-api:latest"
 docker compose --env-file "$env_file" -p "$compose_project" -f "$compose_file" down -v --remove-orphans
 docker compose --env-file "$env_file" -p "$compose_project" -f "$compose_file" up -d postgres
-docker compose --env-file "$env_file" -p "$compose_project" -f "$compose_file" build api
+if ! docker compose --env-file "$env_file" -p "$compose_project" -f "$compose_file" build api; then
+  echo "Compose build failed; retrying API image build with host networking for Docker registry DNS." >&2
+  docker build --network host -t "$api_image" -f infra/docker/node.Dockerfile .
+fi
 docker compose --env-file "$env_file" -p "$compose_project" -f "$compose_file" run --rm -T api scripts/oxrm-internal db migrate
 docker compose --env-file "$env_file" -p "$compose_project" -f "$compose_file" run --rm -T api scripts/oxrm-internal db seed
 docker compose --env-file "$env_file" -p "$compose_project" -f "$compose_file" run --rm -T api scripts/oxrm-internal db demo "$demo_scenario"
