@@ -103,6 +103,29 @@ function parseJsonFlag(flags: Map<string, string | boolean>, key: string) {
 
 const planInputSchema = z.union([planActionSchema, z.array(planActionSchema)]);
 
+function defaultJobSearchSetupInput() {
+  return {
+    sources: [
+      {
+        title: "Job boards and alerts",
+        channel: "job_board",
+        sourceUrl: "https://example.invalid/jobs",
+        cadence: "daily",
+        importInstructions: "Import or paste job postings with source URL, company, role, location, raw description, and received date.",
+        privacyNotes: "Keep real credentials and private alert URLs outside the repository."
+      },
+      {
+        title: "Recruiter inbox",
+        channel: "email",
+        sourceUrl: "mailto:recruiter-inbox@example.invalid",
+        cadence: "daily",
+        importInstructions: "Extract recruiter, company, position, communication thread, job description, and next follow-up.",
+        privacyNotes: "Use local credentials only. Do not use real inbox data in public demos."
+      }
+    ]
+  };
+}
+
 async function main() {
   const parsed = parseArgs(process.argv.slice(2));
   const ctx = getContext(parsed.flags);
@@ -125,6 +148,8 @@ async function main() {
             "outreach:backfill [--execute] [--lead-id ID] [--activity-id ID] [--limit 50]",
             "job:actions JOB_ID",
             "job:action JOB_ID ACTION [--reason TEXT]",
+            "setup:job-search [--input '{...}']",
+            "setup:job-search:get",
             "queue:due",
             "task:list [--status open]",
             "task:create --title TITLE [--lead-id ID] [--due-at ISO]",
@@ -396,6 +421,19 @@ async function main() {
           })
         })
       );
+      break;
+
+    case "setup:job-search":
+      print(
+        await requestApi(ctx, "/api/setup/job-search", {
+          method: "POST",
+          body: JSON.stringify(parsed.flags.get("input") ? parseJsonFlag(parsed.flags, "input") : defaultJobSearchSetupInput())
+        })
+      );
+      break;
+
+    case "setup:job-search:get":
+      print(await requestApi(ctx, "/api/setup/job-search"));
       break;
 
     case "queue:due":

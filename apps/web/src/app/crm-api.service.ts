@@ -2,6 +2,8 @@ import { Injectable } from "@angular/core";
 import {
   EventRow,
   HealthResponse,
+  JobSearchSetupInput,
+  JobSearchSetupSummary,
   JobWorkflowResponse,
   LeadEditForm,
   LeadRow,
@@ -145,6 +147,17 @@ export class CrmApiService {
     return this.request<JobWorkflowResponse>(`/api/jobs/${encodeURIComponent(id)}/actions`, {
       method: "POST",
       body: JSON.stringify({ action, ...input })
+    });
+  }
+
+  async getJobSearchSetup() {
+    return this.request<JobSearchSetupSummary>("/api/setup/job-search");
+  }
+
+  async configureJobSearchSetup(input: JobSearchSetupInput) {
+    return this.request<JobSearchSetupSummary>("/api/setup/job-search", {
+      method: "POST",
+      body: JSON.stringify(cleanPayload(input))
     });
   }
 

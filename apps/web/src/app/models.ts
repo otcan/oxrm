@@ -347,8 +347,75 @@ export interface JobWorkflowResponse {
   workflow: JobWorkflowState;
 }
 
+export interface JobSearchSetupSourceInput {
+  title: string;
+  channel: "job_board" | "career_page" | "email" | "referral" | "manual" | "browser" | "csv" | "api";
+  sourceUrl?: string;
+  cadence: string;
+  importInstructions?: string;
+  privacyNotes?: string;
+}
+
+export interface JobSearchSetupInput {
+  sources: JobSearchSetupSourceInput[];
+  cvStrategy: {
+    mode: "master" | "master_plus_variants" | "role_specific" | "manual";
+    baseCvPath?: string;
+    variantPolicy?: string;
+    editorInstructions?: string;
+  };
+  coverLetterStrategy: {
+    mode: "never" | "high_fit_only" | "every_application" | "manual";
+    threshold: number;
+    templatePath?: string;
+    editorInstructions?: string;
+  };
+  fitRubric: {
+    mode: "manual" | "llm_assisted" | "automatic_suggestion";
+    threshold: number;
+    mustHave: string[];
+    niceToHave: string[];
+    exclusions: string[];
+    instructions?: string;
+  };
+  automationPolicy: {
+    level: "manual" | "suggest_only" | "draft_documents" | "import_and_score";
+    approvalRequired: boolean;
+    allowedActions: string[];
+  };
+  schedule: {
+    importCadence: string;
+    reviewCadence: string;
+    timezone: string;
+  };
+  notificationPolicy: {
+    channels: string[];
+    digestCadence: string;
+    instructions?: string;
+  };
+  notes?: string;
+}
+
+export interface JobSearchSetupSummary {
+  configured: boolean;
+  templateKey: "job_search";
+  profile: XrmRecord | null;
+  sources: XrmRecord[];
+  timers: XrmRecord[];
+  blueprints: XrmRecord[];
+  cvStrategy: XrmRecord | null;
+  coverLetterStrategy: XrmRecord | null;
+  fitRubric: XrmRecord | null;
+  followUpStrategy: XrmRecord | null;
+  playbookText: string;
+  agentPrompt: string;
+  gaps: string[];
+  nextSteps: string[];
+}
+
 export type NavItem =
   | "Today"
+  | "Setup"
   | "Applications"
   | "Jobs"
   | "Contacts"

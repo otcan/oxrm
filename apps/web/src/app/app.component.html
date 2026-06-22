@@ -61,6 +61,15 @@
         />
       }
 
+      @case ("Setup") {
+        <oc-job-search-setup-page
+          [summary]="jobSearchSetup()"
+          [saving]="saving()"
+          [error]="saveError()"
+          (saveSetup)="saveJobSearchSetup($event)"
+        />
+      }
+
       @case ("Jobs") {
         <oc-job-jobs-page
           [search]="jobSearch()"

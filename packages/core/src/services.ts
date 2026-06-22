@@ -145,9 +145,75 @@ const backfillLegacyOutreachEventsSchema = z.object({
   overwriteConfirmedBody: z.boolean().default(false)
 });
 
+const jobSearchSetupSourceSchema = z.object({
+  title: z.string().min(1),
+  channel: z.enum(["job_board", "career_page", "email", "referral", "manual", "browser", "csv", "api"]).default("manual"),
+  sourceUrl: z.string().optional(),
+  cadence: z.string().default("manual"),
+  importInstructions: z.string().optional(),
+  privacyNotes: z.string().optional()
+});
+
+const jobSearchSetupSchema = z.object({
+  sources: z.array(jobSearchSetupSourceSchema).default([]),
+  cvStrategy: z
+    .object({
+      mode: z.enum(["master", "master_plus_variants", "role_specific", "manual"]).default("master_plus_variants"),
+      baseCvPath: z.string().optional(),
+      variantPolicy: z.string().optional(),
+      editorInstructions: z.string().optional()
+    })
+    .default({ mode: "master_plus_variants" }),
+  coverLetterStrategy: z
+    .object({
+      mode: z.enum(["never", "high_fit_only", "every_application", "manual"]).default("high_fit_only"),
+      threshold: z.number().int().min(0).max(100).default(75),
+      templatePath: z.string().optional(),
+      editorInstructions: z.string().optional()
+    })
+    .default({ mode: "high_fit_only", threshold: 75 }),
+  fitRubric: z
+    .object({
+      mode: z.enum(["manual", "llm_assisted", "automatic_suggestion"]).default("llm_assisted"),
+      threshold: z.number().int().min(0).max(100).default(75),
+      mustHave: z.array(z.string()).default([]),
+      niceToHave: z.array(z.string()).default([]),
+      exclusions: z.array(z.string()).default([]),
+      instructions: z.string().optional()
+    })
+    .default({ mode: "llm_assisted", threshold: 75, mustHave: [], niceToHave: [], exclusions: [] }),
+  automationPolicy: z
+    .object({
+      level: z.enum(["manual", "suggest_only", "draft_documents", "import_and_score"]).default("suggest_only"),
+      approvalRequired: z.boolean().default(true),
+      allowedActions: z.array(z.string()).default(["import_jobs", "score_fit", "draft_cv", "draft_cover_letter", "create_tasks"])
+    })
+    .default({
+      level: "suggest_only",
+      approvalRequired: true,
+      allowedActions: ["import_jobs", "score_fit", "draft_cv", "draft_cover_letter", "create_tasks"]
+    }),
+  schedule: z
+    .object({
+      importCadence: z.string().default("daily 08:30"),
+      reviewCadence: z.string().default("daily 16:00"),
+      timezone: z.string().default("local")
+    })
+    .default({ importCadence: "daily 08:30", reviewCadence: "daily 16:00", timezone: "local" }),
+  notificationPolicy: z
+    .object({
+      channels: z.array(z.string()).default(["in_app"]),
+      digestCadence: z.string().default("daily"),
+      instructions: z.string().optional()
+    })
+    .default({ channels: ["in_app"], digestCadence: "daily" }),
+  notes: z.string().optional()
+});
+
 type ViewObjectType = z.infer<typeof viewObjectTypeSchema>;
 type ViewFilter = z.infer<typeof viewFilterSchema>;
 type ViewSort = z.infer<typeof viewSortSchema>;
+type JobSearchSetup = z.infer<typeof jobSearchSetupSchema>;
 
 const legacyViewObjectTypes = ["lead", "person", "company", "task", "event"] as const;
 type LegacyViewObjectType = (typeof legacyViewObjectTypes)[number];
@@ -440,6 +506,125 @@ function xrmField(record: { fields?: unknown; [key: string]: unknown } | null | 
   const fields = xrmFields(record);
   const value = fields[key] ?? record?.[key];
   return value === undefined || value === null || value === "" ? fallback : String(value);
+}
+
+function slugPart(value: string) {
+  return (
+    compactText(value)
+      ?.toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 64) || "source"
+  );
+}
+
+function linesList(values: string[]) {
+  return values.filter(Boolean).length > 0 ? values.filter(Boolean).map((value) => `- ${value}`).join("\n") : "- Not specified yet";
+}
+
+function defaultJobSearchSetup(): JobSearchSetup {
+  return jobSearchSetupSchema.parse({
+    sources: [
+      {
+        title: "Job boards and alerts",
+        channel: "job_board",
+        sourceUrl: "https://example.invalid/jobs",
+        cadence: "daily",
+        importInstructions: "Import or paste job postings with the source URL, raw job description, company, role, and location.",
+        privacyNotes: "Keep real credentials and private alert links outside the repository."
+      },
+      {
+        title: "Recruiter inbox",
+        channel: "email",
+        sourceUrl: "mailto:recruiter-inbox@example.invalid",
+        cadence: "daily",
+        importInstructions: "Extract recruiter, company, position, job description, communication thread, and next follow-up.",
+        privacyNotes: "Use local credentials only. Do not include real inbox data in public demos."
+      }
+    ]
+  });
+}
+
+function buildJobSearchSetupPlaybook(input: JobSearchSetup) {
+  const sourceLines = input.sources.map((source) => {
+    const url = source.sourceUrl ? ` (${source.sourceUrl})` : "";
+    return `- ${source.title}: ${source.channel}, ${source.cadence}${url}`;
+  });
+
+  return [
+    "# Job search operating playbook",
+    "",
+    "## Goal",
+    "Run a local job application system in oXRM. Sources create job postings and alerts, fit scoring creates suggestions, humans approve applications and external messages, and all communication is recorded back to the job application ledger.",
+    "",
+    "## Sources",
+    sourceLines.length > 0 ? sourceLines.join("\n") : "- Add at least one job board, career page, recruiter inbox, referral queue, CSV, or manual source.",
+    "",
+    "## CV workflow",
+    `Mode: ${input.cvStrategy.mode}`,
+    `Base CV path: ${input.cvStrategy.baseCvPath || "Not set"}`,
+    input.cvStrategy.variantPolicy || "Create role-specific variants only when the fit is high enough to justify editing.",
+    input.cvStrategy.editorInstructions || "Use a generic file editor to modify CV drafts. Keep the original template separate from generated variants.",
+    "",
+    "## Cover letter workflow",
+    `Mode: ${input.coverLetterStrategy.mode}`,
+    `Threshold: ${input.coverLetterStrategy.threshold}`,
+    `Template path: ${input.coverLetterStrategy.templatePath || "Not set"}`,
+    input.coverLetterStrategy.editorInstructions || "Generate cover letters as drafts only. Human approval is required before external use.",
+    "",
+    "## Fit rubric",
+    `Mode: ${input.fitRubric.mode}`,
+    `High-fit threshold: ${input.fitRubric.threshold}`,
+    "Must have:",
+    linesList(input.fitRubric.mustHave),
+    "Nice to have:",
+    linesList(input.fitRubric.niceToHave),
+    "Exclusions:",
+    linesList(input.fitRubric.exclusions),
+    input.fitRubric.instructions || "Score fit from the job description, CV context, seniority, location, constraints, and evidence. Explain uncertainty.",
+    "",
+    "## Automation policy",
+    `Level: ${input.automationPolicy.level}`,
+    `Approval required: ${input.automationPolicy.approvalRequired ? "yes" : "no"}`,
+    `Allowed actions: ${input.automationPolicy.allowedActions.join(", ") || "none"}`,
+    "",
+    "## Daily timers",
+    `Import and scoring: ${input.schedule.importCadence} (${input.schedule.timezone})`,
+    `Review and drafts: ${input.schedule.reviewCadence} (${input.schedule.timezone})`,
+    "",
+    "## Human control",
+    "Humans control final CV edits, final cover letters, applications, sends, uploads, replies, approvals, and rejection decisions.",
+    "",
+    "## Agent loop",
+    "Read sources -> create or update job postings -> calculate fit -> suggest next actions -> draft CV/cover/follow-up artifacts -> wait for human approval -> record the external action and next follow-up."
+  ].join("\n");
+}
+
+function buildJobSearchAgentPrompt(input: JobSearchSetup) {
+  return [
+    "Use oXRM as the local source of truth for this job search.",
+    "Read oxrm://setup/job-search and oxrm://playbook/job-search before changing records.",
+    "Import or paste job postings into XRM records with source URLs and raw job descriptions.",
+    "Create job_fit records using the configured rubric. Treat scores as suggestions.",
+    "Create application records only for jobs that pass the configured threshold or are explicitly requested by the human.",
+    "Draft CV variants, cover letters, recruiter follow-ups, and application tasks only. Do not send or upload externally.",
+    `Human approval required: ${input.automationPolicy.approvalRequired ? "yes" : "no"}.`,
+    `Daily review cadence: ${input.schedule.reviewCadence}.`
+  ].join("\n");
+}
+
+function jobSearchSetupGaps(input: {
+  sources: unknown[];
+  timers: unknown[];
+  blueprints: unknown[];
+  playbook?: unknown;
+}) {
+  const gaps: string[] = [];
+  if (input.sources.length === 0) gaps.push("Add at least one job source.");
+  if (input.timers.length === 0) gaps.push("Add daily import/review timers.");
+  if (input.blueprints.length === 0) gaps.push("Add action blueprints for fit scoring, CV editing, cover letters, and follow-ups.");
+  if (!input.playbook) gaps.push("Generate the job search playbook.");
+  return gaps;
 }
 
 function summarizeRelationship(
@@ -1323,6 +1508,260 @@ export function createCrmServices({ db, backupsRequired = false }: ServiceContex
         orderBy: [desc(xrmRecords.updatedAt)],
         limit: parsed.limit
       });
+    },
+
+    async getJobSearchSetup() {
+      const [playbooks, sources, timers, blueprints] = await Promise.all([
+        this.searchXrmRecords({ objectType: "operator_playbook", limit: 200 }),
+        this.searchXrmRecords({ objectType: "source_config", limit: 200 }),
+        this.searchXrmRecords({ objectType: "automation_timer", limit: 200 }),
+        this.searchXrmRecords({ objectType: "action_blueprint", limit: 200 })
+      ]);
+      const jobSearchOnly = (record: { externalKey?: string | null; metadata?: unknown }) =>
+        record.externalKey?.startsWith("job-search:") || jsonObject(record.metadata)["templateKey"] === "job_search";
+      const setupFirst = (record: { externalKey?: string | null }) => (record.externalKey?.startsWith("job-search:setup:") ? 0 : 1);
+      const jobPlaybooks = playbooks.filter(jobSearchOnly).sort((left, right) => setupFirst(left) - setupFirst(right));
+      const jobSources = sources.filter(jobSearchOnly).sort((left, right) => setupFirst(left) - setupFirst(right));
+      const jobTimers = timers.filter(jobSearchOnly).sort((left, right) => setupFirst(left) - setupFirst(right));
+      const jobBlueprints = blueprints.filter(jobSearchOnly).sort((left, right) => setupFirst(left) - setupFirst(right));
+      const playbook =
+        jobPlaybooks.find((record) => record.externalKey === "job-search:playbook:generated") ??
+        jobPlaybooks.find((record) => record.externalKey === "job-search:playbook:start") ??
+        jobPlaybooks[0];
+      const findBlueprint = (kind: string) =>
+        jobBlueprints.find((record) => xrmField(record, "blueprintKind") === kind || record.externalKey?.includes(kind));
+      const normalizedInput = defaultJobSearchSetup();
+      const playbookText = xrmField(playbook, "playbookBody") || xrmField(playbook, "agentInstructions") || buildJobSearchSetupPlaybook(normalizedInput);
+      const agentPrompt = xrmField(playbook, "agentInstructions") || buildJobSearchAgentPrompt(normalizedInput);
+      const gaps = jobSearchSetupGaps({ sources: jobSources, timers: jobTimers, blueprints: jobBlueprints, playbook });
+
+      return {
+        configured: gaps.length === 0,
+        templateKey: "job_search",
+        profile: playbook ?? null,
+        sources: jobSources,
+        timers: jobTimers,
+        blueprints: jobBlueprints,
+        cvStrategy: findBlueprint("cv-editor") ?? null,
+        coverLetterStrategy: findBlueprint("cover-letter") ?? null,
+        fitRubric: findBlueprint("fit-rubric") ?? null,
+        followUpStrategy: findBlueprint("follow-up") ?? null,
+        playbookText,
+        agentPrompt,
+        gaps,
+        nextSteps: [
+          "Add or verify sources.",
+          "Confirm CV and cover letter templates.",
+          "Run fit scoring for fresh postings.",
+          "Review high-fit suggestions.",
+          "Draft only, then wait for human approval before external action."
+        ]
+      };
+    },
+
+    async configureJobSearchSetup(input: unknown = {}) {
+      const parsedInput = jobSearchSetupSchema.parse(input);
+      const parsed = parsedInput.sources.length > 0 ? parsedInput : defaultJobSearchSetup();
+      const playbookBody = buildJobSearchSetupPlaybook(parsed);
+      const agentPrompt = buildJobSearchAgentPrompt(parsed);
+      const metadata = {
+        templateKey: "job_search",
+        source: "job-search-setup",
+        generatedAt: new Date().toISOString()
+      };
+
+      await Promise.all(
+        parsed.sources.map((source) =>
+          this.upsertXrmRecord({
+            objectType: "source_config",
+            externalKey: `job-search:setup:source:${slugPart(source.title)}`,
+            displayName: source.title,
+            fields: {
+              title: source.title,
+              channel: source.channel,
+              sourceUrl: source.sourceUrl,
+              cadence: source.cadence,
+              status: "configured",
+              importInstructions: source.importInstructions,
+              privacyNotes: source.privacyNotes
+            },
+            status: "active",
+            source: "job-search-setup",
+            metadata
+          })
+        )
+      );
+
+      const blueprintRecords = [
+        {
+          key: "import-jobs",
+          title: "Import job postings from configured sources",
+          appliesToViewKey: "job_search.sources",
+          appliesToObjectType: "source_config",
+          trigger: parsed.schedule.importCadence,
+          automationLevel: parsed.automationPolicy.level,
+          approvalRequired: "No approval for local import; approval required before external action.",
+          inputs: "Source URL, raw description, recruiter email, company, role, location, platform, received date.",
+          outputs: "Job Posting, Job Alert, Communication Ledger entry, and dedupe note.",
+          humanControl: "Humans decide which sources and credentials exist. Agents must not use hidden credentials.",
+          riskLevel: "medium"
+        },
+        {
+          key: "fit-rubric",
+          title: "Calculate job fit with evidence",
+          appliesToViewKey: "job_search.jobs",
+          appliesToObjectType: "job",
+          trigger: "new_or_updated_job_posting",
+          automationLevel: parsed.fitRubric.mode,
+          approvalRequired: "No approval to score; human approval before applying.",
+          inputs: [
+            `Threshold: ${parsed.fitRubric.threshold}`,
+            `Must have: ${parsed.fitRubric.mustHave.join(", ") || "not specified"}`,
+            `Nice to have: ${parsed.fitRubric.niceToHave.join(", ") || "not specified"}`,
+            `Exclusions: ${parsed.fitRubric.exclusions.join(", ") || "not specified"}`,
+            parsed.fitRubric.instructions
+          ]
+            .filter(Boolean)
+            .join("\n"),
+          outputs: "Job Fit record with fitRate, fitSummary, strengths, gaps, risks, and suggested next action.",
+          humanControl: "Humans can override fit scores and archive jobs.",
+          riskLevel: "low"
+        },
+        {
+          key: "cv-editor",
+          title: "Create role-specific CV variants",
+          appliesToViewKey: "job_search.applications",
+          appliesToObjectType: "application",
+          trigger: "high_fit_application_candidate",
+          automationLevel: parsed.automationPolicy.level,
+          approvalRequired: "Always required before upload or send.",
+          inputs: [
+            `Mode: ${parsed.cvStrategy.mode}`,
+            `Base CV path: ${parsed.cvStrategy.baseCvPath || "not set"}`,
+            parsed.cvStrategy.variantPolicy,
+            parsed.cvStrategy.editorInstructions
+          ]
+            .filter(Boolean)
+            .join("\n"),
+          outputs: "CV Version record with source path, output path, body or summary, and application link.",
+          humanControl: "Humans approve factual claims, final wording, and external upload.",
+          riskLevel: "high"
+        },
+        {
+          key: "cover-letter",
+          title: "Draft cover letters for high-fit applications",
+          appliesToViewKey: "job_search.applications",
+          appliesToObjectType: "application",
+          trigger: `fit_rate_above_${parsed.coverLetterStrategy.threshold}`,
+          automationLevel: parsed.coverLetterStrategy.mode,
+          approvalRequired: "Always required before send or upload.",
+          inputs: [
+            `Mode: ${parsed.coverLetterStrategy.mode}`,
+            `Template path: ${parsed.coverLetterStrategy.templatePath || "not set"}`,
+            parsed.coverLetterStrategy.editorInstructions
+          ]
+            .filter(Boolean)
+            .join("\n"),
+          outputs: "Cover Letter record with draft body, summary, and application link.",
+          humanControl: "Humans approve final cover letters and decide whether to use one.",
+          riskLevel: "high"
+        },
+        {
+          key: "follow-up",
+          title: "Draft recruiter and application follow-ups",
+          appliesToViewKey: "job_search.applications",
+          appliesToObjectType: "application",
+          trigger: parsed.schedule.reviewCadence,
+          automationLevel: parsed.automationPolicy.level,
+          approvalRequired: "Always required before sending.",
+          inputs: "Application stage, communication ledger, responsible person, last touch, due date, and previous drafts.",
+          outputs: "Action Suggestion, draft follow-up, approval request, and next task.",
+          humanControl: "Humans send externally and then record what happened.",
+          riskLevel: "medium"
+        }
+      ];
+
+      await Promise.all(
+        blueprintRecords.map((blueprint) =>
+          this.upsertXrmRecord({
+            objectType: "action_blueprint",
+            externalKey: `job-search:setup:blueprint:${blueprint.key}`,
+            displayName: blueprint.title,
+            fields: {
+              ...blueprint,
+              blueprintKind: blueprint.key,
+              templateKey: "job_search",
+              status: "active"
+            },
+            status: "active",
+            source: "job-search-setup",
+            metadata
+          })
+        )
+      );
+
+      await Promise.all([
+        this.upsertXrmRecord({
+          objectType: "automation_timer",
+          externalKey: "job-search:setup:timer:import-fit",
+          displayName: "Daily source import and fit scoring",
+          fields: {
+            title: "Daily source import and fit scoring",
+            cadence: parsed.schedule.importCadence,
+            nextRunAt: null,
+            task: "Import configured sources, dedupe postings, preserve raw descriptions, and calculate job fit.",
+            blueprint: "Import job postings from configured sources; Calculate job fit with evidence",
+            approvalRequired: "No approval to score; approval required before applying or sending.",
+            status: "scheduled"
+          },
+          status: "active",
+          source: "job-search-setup",
+          metadata
+        }),
+        this.upsertXrmRecord({
+          objectType: "automation_timer",
+          externalKey: "job-search:setup:timer:review-drafts",
+          displayName: "Daily review, drafts, and follow-ups",
+          fields: {
+            title: "Daily review, drafts, and follow-ups",
+            cadence: parsed.schedule.reviewCadence,
+            nextRunAt: null,
+            task: "Review high-fit suggestions, prepare CV and cover letter drafts, draft follow-ups, and create approval tasks.",
+            blueprint: "Create role-specific CV variants; Draft cover letters for high-fit applications; Draft recruiter and application follow-ups",
+            approvalRequired: parsed.automationPolicy.approvalRequired ? "Always required" : "Configured as optional",
+            status: "scheduled"
+          },
+          status: "active",
+          source: "job-search-setup",
+          metadata
+        })
+      ]);
+
+      await this.upsertXrmRecord({
+        objectType: "operator_playbook",
+        externalKey: "job-search:playbook:generated",
+        displayName: "Configured job search operating playbook",
+        fields: {
+          title: "Configured job search operating playbook",
+          audience: "Human operator and local LLM agent running job applications in oXRM.",
+          startCommand: "./oxrm start && ./oxrm ready && ./oxrm cli setup:job-search:get",
+          setupChecklist:
+            "1. Confirm job sources.\n2. Confirm CV template and editing policy.\n3. Confirm cover letter policy.\n4. Confirm fit rubric and threshold.\n5. Confirm daily timers.\n6. Confirm notification and approval policy.",
+          dailyLoop:
+            "Morning: import sources and score new postings.\nAfternoon: review high-fit suggestions and prepare drafts.\nEvening: record external applications, recruiter messages, and follow-ups.",
+          agentInstructions: agentPrompt,
+          humanInstructions: "Approve final documents and external actions. Record what was actually sent or submitted after doing it outside oXRM.",
+          playbookBody,
+          notificationPolicy: JSON.stringify(parsed.notificationPolicy),
+          notes: parsed.notes,
+          status: "active"
+        },
+        status: "active",
+        source: "job-search-setup",
+        metadata
+      });
+
+      return this.getJobSearchSetup();
     },
 
     async deleteXrmRecord(id: string) {

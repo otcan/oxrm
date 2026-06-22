@@ -11,7 +11,10 @@ interviews, referrals, and follow-ups from your own machine.
 ./oxrm start
 ./oxrm ready
 ./oxrm seed job-search
+./oxrm cli setup:job-search:get
 ./oxrm urls
+./oxrm cli mcp:read oxrm://setup/job-search
+./oxrm cli mcp:read oxrm://playbook/job-search
 ./oxrm cli mcp:read crm://queue/today
 ./oxrm cli mcp:call xrm.run_view --input '{"key":"job_search.applications"}'
 ./oxrm cli mcp:call xrm.run_view --input '{"key":"job_search.job_alerts"}'
@@ -39,7 +42,7 @@ draft -> human review -> external action -> recorded event.
 Ask Codex to:
 
 1. read the job-search playbook
-2. inspect job sources, job alerts, postings, applications, fits, CV versions,
+2. inspect setup, job sources, job alerts, postings, applications, fits, CV versions,
    cover letters, and action suggestions
 3. pick one high-fit application or posting
 4. summarize the job, company, contact, last touch, and fit tradeoffs

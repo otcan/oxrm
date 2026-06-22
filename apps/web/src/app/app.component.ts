@@ -15,6 +15,7 @@ import { GuidedTourComponent } from "./guided-tour.component";
 import { JobApplicationsPageComponent } from "./job-applications-page.component";
 import { JobContactRow, JobContactsPageComponent } from "./job-contacts-page.component";
 import { JobJobsPageComponent } from "./job-jobs-page.component";
+import { JobSearchSetupPageComponent } from "./job-search-setup-page.component";
 import { OutreachCompaniesPageComponent } from "./outreach-companies-page.component";
 import { OutreachPeoplePageComponent } from "./outreach-people-page.component";
 import { OutreachPipelinePageComponent } from "./outreach-pipeline-page.component";
@@ -26,6 +27,8 @@ import {
   FilterChange,
   FilterControl,
   HealthResponse,
+  JobSearchSetupInput,
+  JobSearchSetupSummary,
   LeadEditForm,
   LeadRow,
   Metric,
@@ -52,6 +55,7 @@ import {
 
 const JOB_NAV: NavDefinition[] = [
   { label: "Today", path: "/today" },
+  { label: "Setup", path: "/setup/job-search" },
   { label: "Applications", path: "/applications" },
   { label: "Jobs", path: "/jobs" },
   { label: "Contacts", path: "/contacts" }
@@ -81,6 +85,7 @@ const OUTREACH_NAV: NavDefinition[] = [
     JobApplicationsPageComponent,
     JobContactsPageComponent,
     JobJobsPageComponent,
+    JobSearchSetupPageComponent,
     OutreachCompaniesPageComponent,
     OutreachPeoplePageComponent,
     OutreachPipelinePageComponent,
@@ -106,6 +111,7 @@ export class AppComponent {
   readonly jobApplications = signal<ViewRunResult | null>(null);
   readonly jobJobs = signal<ViewRunResult | null>(null);
   readonly jobInterviews = signal<ViewRunResult | null>(null);
+  readonly jobSearchSetup = signal<JobSearchSetupSummary | null>(null);
   readonly jobContacts = signal<XrmRecord[]>([]);
   readonly cvRecords = signal<XrmRecord[]>([]);
   readonly outreachLeadRecords = signal<XrmRecord[]>([]);
@@ -198,10 +204,11 @@ export class AppComponent {
         activity: "Communication"
       },
       stages: ["Saved", "Preparing", "Applied", "Interviewing", "Not a fit", "Closed"],
-      routes: {
-        Today: "/today",
-        Applications: "/applications",
-        Jobs: "/jobs",
+        routes: {
+          Today: "/today",
+          Setup: "/setup/job-search",
+          Applications: "/applications",
+          Jobs: "/jobs",
         Contacts: "/contacts",
         Settings: "/settings",
         Advanced: "/settings/advanced"
@@ -955,6 +962,8 @@ export class AppComponent {
         return mode === "outreach"
           ? "Who should I contact or follow up with now?"
           : "What needs attention now, what is coming up, and where each application stands.";
+      case "Setup":
+        return "Sources, CV policy, fit scoring, timers, and agent playbook for the local job search.";
       case "Applications":
         return "Track each application by stage, contact, fit, and next action.";
       case "Jobs":
@@ -1009,6 +1018,7 @@ export class AppComponent {
       jobApplications,
       jobJobs,
       jobInterviews,
+      jobSearchSetup,
       jobContacts,
       cvRecords,
       outreachLeads,
@@ -1024,6 +1034,7 @@ export class AppComponent {
       templateKey === "job_search" ? this.api.runView("job_search.applications").catch(() => null) : Promise.resolve(null),
       templateKey === "job_search" ? this.api.runView("job_search.jobs").catch(() => null) : Promise.resolve(null),
       templateKey === "job_search" ? this.api.runView("job_search.interviews").catch(() => null) : Promise.resolve(null),
+      templateKey === "job_search" ? this.api.getJobSearchSetup().catch(() => null) : Promise.resolve(null),
       templateKey === "job_search" ? this.api.listXrmRecords({ objectType: "job_contact", limit: 100 }).catch(() => []) : Promise.resolve([]),
       templateKey === "job_search" ? this.api.listXrmRecords({ objectType: "cv_version", limit: 100 }).catch(() => []) : Promise.resolve([]),
       this.api.listXrmRecords({ objectType: "lead", limit: 100 }).catch(() => []),
@@ -1040,6 +1051,7 @@ export class AppComponent {
     this.jobApplications.set(jobApplications);
     this.jobJobs.set(jobJobs);
     this.jobInterviews.set(jobInterviews);
+    this.jobSearchSetup.set(jobSearchSetup);
     this.jobContacts.set(jobContacts);
     this.cvRecords.set(cvRecords.filter((record) => this.recordBelongsToMode(record, "job_search")));
     this.outreachLeadRecords.set(outreachLeads.filter((record) => this.recordBelongsToMode(record, "outreach")));
@@ -1069,6 +1081,20 @@ export class AppComponent {
 
   selectSettings() {
     this.selectNav("Settings");
+  }
+
+  async saveJobSearchSetup(input: JobSearchSetupInput) {
+    this.saving.set(true);
+    this.saveError.set(null);
+    try {
+      const setup = await this.api.configureJobSearchSetup(input);
+      this.jobSearchSetup.set(setup);
+      await this.refresh();
+    } catch (error) {
+      this.saveError.set(error instanceof Error ? error.message : "Could not save job search setup.");
+    } finally {
+      this.saving.set(false);
+    }
   }
 
   startCreatePrimary() {
@@ -2204,6 +2230,7 @@ export class AppComponent {
     if (path.startsWith("/pipeline") || path === "/records/lead") return "Pipeline";
     if (path.startsWith("/people") || path === "/records/person") return "People";
     if (path.startsWith("/companies") || path === "/records/company") return "Companies";
+    if (path.startsWith("/setup")) return "Setup";
     if (path.startsWith("/applications") || path === "/records/application") return "Applications";
     if (path.startsWith("/jobs") || path === "/records/job") return "Jobs";
     if (path.startsWith("/contacts") || path === "/records/job_contact") return "Contacts";

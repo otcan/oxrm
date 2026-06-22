@@ -198,6 +198,15 @@ export async function buildServer() {
     return services.runJobWorkflowAction(params.id, request.body);
   });
 
+  app.get("/api/setup/job-search", async () => {
+    return services.getJobSearchSetup();
+  });
+
+  app.post("/api/setup/job-search", async (request, reply) => {
+    const setup = await services.configureJobSearchSetup(request.body);
+    return reply.status(201).send(setup);
+  });
+
   app.get("/api/xrm/records/:id/files", async (request) => {
     const params = request.params as { id: string };
     const query = request.query as { limit?: string };

@@ -54,13 +54,15 @@ Steps:
 
 1. Run `./oxrm codex-demo`.
 2. Open the Web URL from `./oxrm urls`.
-3. Read today's queue with `./oxrm cli mcp:read crm://queue/today`.
-4. Inspect job applications with `./oxrm cli mcp:call xrm.run_view --input '{"key":"job_search.applications"}'`.
-5. Inspect job fits with `./oxrm cli mcp:call xrm.run_view --input '{"key":"job_search.job_fits"}'`.
-6. Pick one high-fit synthetic application.
-7. Summarize the job, company, contact, last touch, fit tradeoffs, CV version, cover letter, and next action.
-8. Draft the next follow-up or application-review note.
-9. Do not send an email, upload an application, or claim anything was sent.
+3. Read the setup with `./oxrm cli mcp:read oxrm://setup/job-search`.
+4. Read the playbook with `./oxrm cli mcp:read oxrm://playbook/job-search`.
+5. Read today's queue with `./oxrm cli mcp:read crm://queue/today`.
+6. Inspect job applications with `./oxrm cli mcp:call xrm.run_view --input '{"key":"job_search.applications"}'`.
+7. Inspect job fits with `./oxrm cli mcp:call xrm.run_view --input '{"key":"job_search.job_fits"}'`.
+8. Pick one high-fit synthetic application.
+9. Summarize the job, company, contact, last touch, fit tradeoffs, CV version, cover letter, and next action.
+10. Draft the next follow-up or application-review note.
+11. Do not send an email, upload an application, or claim anything was sent.
 
 At the end, summarize:
 

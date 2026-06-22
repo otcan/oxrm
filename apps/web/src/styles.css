@@ -704,6 +704,171 @@ h2 {
   overflow-wrap: anywhere;
 }
 
+.setup-page {
+  display: grid;
+  gap: 16px;
+}
+
+.setup-status {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.setup-status div,
+.setup-gap-panel li,
+.setup-record-list div {
+  min-width: 0;
+  border: 1px solid #d8dee8;
+  border-radius: 8px;
+  background: #fbfdff;
+}
+
+.setup-status div {
+  padding: 12px;
+}
+
+.setup-status span,
+.setup-record-list span,
+.setup-record-list small {
+  display: block;
+  color: #64748b;
+}
+
+.setup-status span,
+.setup-record-list span {
+  margin-bottom: 5px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.setup-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 380px);
+  gap: 16px;
+  align-items: start;
+}
+
+.setup-form,
+.setup-side {
+  display: grid;
+  gap: 14px;
+}
+
+.setup-section-header,
+.setup-section-title {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.setup-section-header p {
+  max-width: 760px;
+  color: #64748b;
+  line-height: 1.45;
+}
+
+.setup-section {
+  display: grid;
+  gap: 12px;
+  padding-top: 14px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.setup-section h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.setup-section-title button,
+.source-row-actions button {
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #334155;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+.source-editor-list {
+  display: grid;
+  gap: 12px;
+}
+
+.source-editor-row {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) minmax(130px, 0.6fr) minmax(130px, 0.6fr) minmax(180px, 1fr);
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #d8dee8;
+  border-radius: 8px;
+  background: #fbfdff;
+}
+
+.source-row-actions {
+  display: flex;
+  align-items: end;
+  justify-content: flex-end;
+}
+
+.setup-two-column {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.checkbox-row input {
+  width: auto;
+  min-height: auto;
+}
+
+.setup-gap-panel ul,
+.setup-record-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+}
+
+.setup-gap-panel li {
+  list-style: none;
+  padding: 10px;
+  color: #92400e;
+  background: #fffbeb;
+  border-color: #fde68a;
+}
+
+.setup-record-list div {
+  padding: 10px;
+}
+
+.setup-record-list strong {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.setup-playbook-panel pre {
+  max-height: 360px;
+  margin: 0;
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid #d8dee8;
+  border-radius: 8px;
+  background: #0f172a;
+  color: #e2e8f0;
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .template-strip {
   display: grid;
   grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
@@ -2669,6 +2834,9 @@ button.compact {
   .start-template-switch,
   .start-layout,
   .template-strip,
+  .setup-layout,
+  .source-editor-row,
+  .setup-two-column,
   .job-summary,
   .today-grid,
   .metrics.compact,
@@ -2729,6 +2897,7 @@ button.compact {
   .summary-grid,
   .decision-grid,
   .relationship-grid,
+  .setup-status,
   .playbook-grid,
   .document-editor-grid,
   .document-preview-grid {
@@ -2812,6 +2981,10 @@ button.compact {
   .start-template-switch button,
   .start-layout,
   .start-step,
+  .setup-layout,
+  .setup-form,
+  .setup-side,
+  .source-editor-row,
   .page-toolbar,
   .panel {
     max-width: calc(100vw - 24px);
@@ -2862,6 +3035,19 @@ button.compact {
     grid-template-columns: minmax(0, 1fr);
     gap: 10px;
     align-items: start;
+  }
+
+  .setup-section-header,
+  .setup-section-title,
+  .source-row-actions {
+    display: grid;
+    justify-content: stretch;
+  }
+
+  .setup-section-title button,
+  .source-row-actions button,
+  .setup-section-header button {
+    width: 100%;
   }
 
   .view-action-header {

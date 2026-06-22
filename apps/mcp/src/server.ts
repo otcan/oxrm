@@ -72,6 +72,73 @@ const createViewSchema = {
   createdByAgentId: z.string().uuid().optional()
 };
 
+const jobSearchSetupToolSchema = {
+  sources: z
+    .array(
+      z.object({
+        title: z.string().min(1),
+        channel: z.enum(["job_board", "career_page", "email", "referral", "manual", "browser", "csv", "api"]).default("manual"),
+        sourceUrl: z.string().optional(),
+        cadence: z.string().default("manual"),
+        importInstructions: z.string().optional(),
+        privacyNotes: z.string().optional()
+      })
+    )
+    .default([]),
+  cvStrategy: z
+    .object({
+      mode: z.enum(["master", "master_plus_variants", "role_specific", "manual"]).default("master_plus_variants"),
+      baseCvPath: z.string().optional(),
+      variantPolicy: z.string().optional(),
+      editorInstructions: z.string().optional()
+    })
+    .default({ mode: "master_plus_variants" }),
+  coverLetterStrategy: z
+    .object({
+      mode: z.enum(["never", "high_fit_only", "every_application", "manual"]).default("high_fit_only"),
+      threshold: z.number().int().min(0).max(100).default(75),
+      templatePath: z.string().optional(),
+      editorInstructions: z.string().optional()
+    })
+    .default({ mode: "high_fit_only", threshold: 75 }),
+  fitRubric: z
+    .object({
+      mode: z.enum(["manual", "llm_assisted", "automatic_suggestion"]).default("llm_assisted"),
+      threshold: z.number().int().min(0).max(100).default(75),
+      mustHave: z.array(z.string()).default([]),
+      niceToHave: z.array(z.string()).default([]),
+      exclusions: z.array(z.string()).default([]),
+      instructions: z.string().optional()
+    })
+    .default({ mode: "llm_assisted", threshold: 75, mustHave: [], niceToHave: [], exclusions: [] }),
+  automationPolicy: z
+    .object({
+      level: z.enum(["manual", "suggest_only", "draft_documents", "import_and_score"]).default("suggest_only"),
+      approvalRequired: z.boolean().default(true),
+      allowedActions: z.array(z.string()).default(["import_jobs", "score_fit", "draft_cv", "draft_cover_letter", "create_tasks"])
+    })
+    .default({
+      level: "suggest_only",
+      approvalRequired: true,
+      allowedActions: ["import_jobs", "score_fit", "draft_cv", "draft_cover_letter", "create_tasks"]
+    }),
+  schedule: z
+    .object({
+      importCadence: z.string().default("daily 08:30"),
+      reviewCadence: z.string().default("daily 16:00"),
+      timezone: z.string().default("local")
+    })
+    .default({ importCadence: "daily 08:30", reviewCadence: "daily 16:00", timezone: "local" }),
+  notificationPolicy: z
+    .object({
+      channels: z.array(z.string()).default(["in_app"]),
+      digestCadence: z.string().default("daily"),
+      instructions: z.string().optional()
+    })
+    .default({ channels: ["in_app"], digestCadence: "daily" }),
+  notes: z.string().optional()
+};
+
 const serverInstructions = `
 oXRM is a local-first outreach workspace for high-context job search, customer
 outreach, partnerships, and founder-led sales.
@@ -127,6 +194,22 @@ export async function buildMcpHttpServer() {
     server.resource("crm.backups.latest", "crm://backups/latest", async (uri) => ({
       contents: [{ uri: uri.href, text: JSON.stringify(await tools.services.getBackupHealth(), null, 2) }]
     }));
+
+    server.resource("oxrm.setup.job_search", "oxrm://setup/job-search", async (uri) => ({
+      contents: [{ uri: uri.href, text: JSON.stringify(await tools.services.getJobSearchSetup(), null, 2) }]
+    }));
+
+    server.resource("oxrm.playbook.job_search", "oxrm://playbook/job-search", async (uri) => {
+      const setup = await tools.services.getJobSearchSetup();
+      return {
+        contents: [
+          {
+            uri: uri.href,
+            text: setup.playbookText
+          }
+        ]
+      };
+    });
 
     server.resource(
       "crm.lead",
@@ -451,6 +534,17 @@ export async function buildMcpHttpServer() {
         metadata: z.record(z.string(), z.unknown()).optional()
       },
       async (input) => toContent(await tools.services.runJobWorkflowAction(input.jobId, input))
+    );
+
+    server.tool("job_search.get_setup", "Read job-search onboarding setup, sources, timers, blueprints, and playbook.", {}, async () =>
+      toContent(await tools.services.getJobSearchSetup())
+    );
+
+    server.tool(
+      "job_search.configure_setup",
+      "Create or update job-search onboarding setup as XRM records. Use synthetic values in public demos.",
+      jobSearchSetupToolSchema,
+      async (input) => toContent(await tools.services.configureJobSearchSetup(input))
     );
 
     server.tool(
