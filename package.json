@@ -32,6 +32,8 @@
     "instance": "scripts/oxrm-internal instance",
     "build": "scripts/oxrm-internal build",
     "check": "scripts/oxrm-internal check",
+    "test": "tsx --test tests/*.test.ts",
+    "test:documents:live": "tsx tests/documents-workflow.live.ts",
     "typecheck": "scripts/oxrm-internal typecheck",
     "dev:api": "scripts/oxrm-internal dev api",
     "dev:mcp": "scripts/oxrm-internal dev mcp",

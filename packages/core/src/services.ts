@@ -39,6 +39,7 @@ import {
   allowedJobActions,
   isJobWorkflowActionAllowed,
   runJobWorkflowActionSchema,
+  selectApplicationDocumentSchema,
   OXRM_PRODUCT_NAME,
   OXRM_PRODUCT_SLUG,
   OXRM_PRODUCT_VERSION,
@@ -1292,8 +1293,14 @@ export function createCrmServices({ db, backupsRequired = false }: ServiceContex
         where: eq(xrmRecords.id, id),
         with: {
           objectType: { with: { fields: true, fieldMappings: { with: { semanticField: true } } } },
-          sourceRelationships: { with: { relationshipType: true, targetRecord: { with: { objectType: true } } } },
-          targetRelationships: { with: { relationshipType: true, sourceRecord: { with: { objectType: true } } } },
+          sourceRelationships: {
+            where: isNull(xrmRecordRelationships.deletedAt),
+            with: { relationshipType: true, targetRecord: { with: { objectType: true } } }
+          },
+          targetRelationships: {
+            where: isNull(xrmRecordRelationships.deletedAt),
+            with: { relationshipType: true, sourceRecord: { with: { objectType: true } } }
+          },
           files: true,
           tasks: true,
           activities: true
@@ -1406,6 +1413,94 @@ export function createCrmServices({ db, backupsRequired = false }: ServiceContex
         })
         .returning();
       return relationship;
+    },
+
+    async selectApplicationDocument(input: unknown) {
+      const parsed = selectApplicationDocumentSchema.parse(input);
+      const config =
+        parsed.kind === "cv"
+          ? { relationshipType: "application_uses_cv", objectType: "cv_version", cacheField: "cvVersion" }
+          : { relationshipType: "application_uses_cover_letter", objectType: "cover_letter", cacheField: "coverLetterVersion" };
+
+      await db.transaction(async (tx) => {
+        const application = await tx.query.xrmRecords.findFirst({
+          where: eq(xrmRecords.id, parsed.applicationId),
+          with: { objectType: true }
+        });
+        if (!application || application.objectType?.slug !== "application") {
+          throw serviceError("application_not_found", 404);
+        }
+
+        const relationshipType = await tx.query.xrmRelationshipTypes.findFirst({
+          where: eq(xrmRelationshipTypes.key, config.relationshipType)
+        });
+        if (!relationshipType) {
+          throw serviceError(`xrm_relationship_type_not_found:${config.relationshipType}`, 404, "xrm_relationship_type_not_found");
+        }
+
+        const document = parsed.documentId
+          ? await tx.query.xrmRecords.findFirst({
+              where: eq(xrmRecords.id, parsed.documentId),
+              with: { objectType: true }
+            })
+          : null;
+        if (parsed.documentId && (!document || document.objectType?.slug !== config.objectType)) {
+          throw serviceError("application_document_not_found", 404);
+        }
+
+        const now = new Date();
+        await tx
+          .update(xrmRecordRelationships)
+          .set({ deletedAt: now, updatedAt: now })
+          .where(
+            and(
+              eq(xrmRecordRelationships.relationshipTypeId, relationshipType.id),
+              eq(xrmRecordRelationships.sourceRecordId, application.id),
+              isNull(xrmRecordRelationships.deletedAt)
+            )
+          );
+
+        if (document) {
+          await tx
+            .insert(xrmRecordRelationships)
+            .values({
+              relationshipTypeId: relationshipType.id,
+              sourceRecordId: application.id,
+              targetRecordId: document.id,
+              metadata: { ...(parsed.metadata ?? {}), selected: true },
+              source: parsed.source
+            })
+            .onConflictDoUpdate({
+              target: [
+                xrmRecordRelationships.relationshipTypeId,
+                xrmRecordRelationships.sourceRecordId,
+                xrmRecordRelationships.targetRecordId
+              ],
+              set: {
+                metadata: { ...(parsed.metadata ?? {}), selected: true },
+                source: parsed.source,
+                deletedAt: null,
+                updatedAt: now
+              }
+            });
+        }
+
+        const fields = { ...xrmFields(application), [config.cacheField]: document?.displayName ?? "" };
+        await tx
+          .update(xrmRecords)
+          .set({
+            fields,
+            searchText: buildXrmSearchText({
+              displayName: application.displayName,
+              fields,
+              externalKey: application.externalKey ?? undefined
+            }),
+            updatedAt: now
+          })
+          .where(eq(xrmRecords.id, application.id));
+      });
+
+      return this.getXrmRecord(parsed.applicationId);
     },
 
     async listXrmRelationships(input: unknown = {}) {

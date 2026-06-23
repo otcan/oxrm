@@ -287,8 +287,11 @@ export interface XrmFieldMapping {
 export interface XrmRelationshipRow {
   id: string;
   relationshipType?: { key: string; label: string; inverseLabel?: string | null } | null;
-  sourceRecord?: Pick<XrmRecord, "id" | "displayName" | "objectType"> | null;
-  targetRecord?: Pick<XrmRecord, "id" | "displayName" | "objectType"> | null;
+  sourceRecord?: Pick<XrmRecord, "id" | "displayName" | "objectType" | "fields" | "metadata"> | null;
+  targetRecord?: Pick<XrmRecord, "id" | "displayName" | "objectType" | "fields" | "metadata"> | null;
+  metadata?: Record<string, unknown> | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
 }
 
 export interface XrmRecord {

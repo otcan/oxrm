@@ -1,5 +1,5 @@
 import { CommonModule } from "@angular/common";
-import { ChangeDetectionStrategy, Component, EventEmitter, Input, OnChanges, Output, SimpleChanges } from "@angular/core";
+import { ChangeDetectionStrategy, Component, EventEmitter, HostListener, Input, OnChanges, OnDestroy, Output, SimpleChanges } from "@angular/core";
 import { FormsModule } from "@angular/forms";
 import { XrmRecord, XrmRecordInput } from "./models";
 
@@ -48,11 +48,11 @@ export interface DocumentSaveRequest {
 
         <label class="document-search">
           Search
-          <input [(ngModel)]="search" name="documentSearch" placeholder="Title, company, version">
+          <input [ngModel]="searchInput" (ngModelChange)="scheduleSearch($event)" name="documentSearch" placeholder="Title, company, version">
         </label>
 
         <div class="document-page-list">
-          @for (document of filteredRecords; track document.id) {
+          @for (document of pagedRecords; track document.id) {
             <button
               type="button"
               class="document-list-item"
@@ -67,6 +67,13 @@ export interface DocumentSaveRequest {
             <div class="empty subtle">No matching documents. Add the first one here.</div>
           }
         </div>
+        @if (pageCount > 1) {
+          <nav class="document-pagination" aria-label="Document pages">
+            <button type="button" [disabled]="page === 1" (click)="setPage(page - 1)">Previous</button>
+            <span>Page {{ page }} of {{ pageCount }}</span>
+            <button type="button" [disabled]="page === pageCount" (click)="setPage(page + 1)">Next</button>
+          </nav>
+        }
       </aside>
 
       <article class="document-page-editor panel">
@@ -83,6 +90,19 @@ export interface DocumentSaveRequest {
             </button>
           </div>
         </header>
+
+        @if (selectedRecord && documentUsages.length > 0) {
+          <section class="document-usage" aria-label="Applications using this document">
+            <strong>Used by {{ documentUsages.length }} application{{ documentUsages.length === 1 ? '' : 's' }}</strong>
+            <div>
+              @for (application of documentUsages; track application['id']) {
+                <button type="button" (click)="openApplication.emit(applicationId(application))">
+                  {{ applicationLabel(application) }}
+                </button>
+              }
+            </div>
+          </section>
+        }
 
         <div class="document-page-form">
           <label>
@@ -164,21 +184,29 @@ export interface DocumentSaveRequest {
   `,
   changeDetection: ChangeDetectionStrategy.OnPush
 })
-export class JobDocumentsPageComponent implements OnChanges {
+export class JobDocumentsPageComponent implements OnChanges, OnDestroy {
   @Input() cvs: XrmRecord[] = [];
   @Input() coverLetters: XrmRecord[] = [];
   @Input() saving = false;
   @Input() error: string | null = null;
   @Input() savedDocumentId = "";
   @Input() newCoverLetter: CoverLetterDraftRequest | null = null;
+  @Input() applications: Array<Record<string, unknown>> = [];
   @Output() saveDocument = new EventEmitter<DocumentSaveRequest>();
+  @Output() openApplication = new EventEmitter<string>();
 
   tab: DocumentTab = "cv_version";
   search = "";
+  searchInput = "";
+  page = 1;
+  readonly pageSize = 25;
   selectedId = "";
   selectedRecord: XrmRecord | null = null;
   linkedApplicationId = "";
   form = this.blankForm();
+  private cleanSnapshot = JSON.stringify(this.form);
+  private searchTimer: ReturnType<typeof setTimeout> | null = null;
+  private filteredCache: { records: XrmRecord[]; query: string; result: XrmRecord[] } | null = null;
 
   get records() {
     return this.tab === "cv_version" ? this.cvs : this.coverLetters;
@@ -186,12 +214,30 @@ export class JobDocumentsPageComponent implements OnChanges {
 
   get filteredRecords() {
     const query = this.search.trim().toLowerCase();
-    if (!query) return this.records;
-    return this.records.filter((record) =>
+    const records = this.records;
+    if (this.filteredCache?.records === records && this.filteredCache.query === query) return this.filteredCache.result;
+    const result = !query ? records : records.filter((record) =>
       `${record.displayName} ${record.fields?.["company"] ?? ""} ${record.fields?.["version"] ?? ""} ${record.fields?.["derivedFor"] ?? ""}`
         .toLowerCase()
         .includes(query)
     );
+    this.filteredCache = { records, query, result };
+    return result;
+  }
+
+  get pageCount() {
+    return Math.max(1, Math.ceil(this.filteredRecords.length / this.pageSize));
+  }
+
+  get pagedRecords() {
+    const start = (this.page - 1) * this.pageSize;
+    return this.filteredRecords.slice(start, start + this.pageSize);
+  }
+
+  get documentUsages() {
+    if (!this.selectedRecord) return [];
+    const field = this.tab === "cv_version" ? "cvVersion" : "coverLetterVersion";
+    return this.applications.filter((application) => application[field] === this.selectedRecord?.displayName);
   }
 
   ngOnChanges(changes: SimpleChanges) {
@@ -207,19 +253,29 @@ export class JobDocumentsPageComponent implements OnChanges {
   }
 
   switchTab(tab: DocumentTab) {
+    if (!this.confirmDiscard()) return;
     this.tab = tab;
     this.search = "";
-    this.startNew();
+    this.searchInput = "";
+    this.page = 1;
+    this.clearEditor();
   }
 
   startNew() {
+    if (!this.confirmDiscard()) return;
+    this.clearEditor();
+  }
+
+  private clearEditor() {
     this.selectedId = "";
     this.selectedRecord = null;
     this.linkedApplicationId = "";
     this.form = this.blankForm();
+    this.markClean();
   }
 
   startCoverLetter(request: CoverLetterDraftRequest) {
+    if (!this.confirmDiscard()) return;
     this.tab = "cover_letter";
     this.search = "";
     this.selectedId = "";
@@ -235,9 +291,11 @@ export class JobDocumentsPageComponent implements OnChanges {
       body: request.body,
       editorInstructions: request.editorInstructions
     };
+    this.cleanSnapshot = JSON.stringify(this.blankForm());
   }
 
   select(record: XrmRecord) {
+    if (record.id !== this.selectedId && !this.confirmDiscard()) return;
     this.tab = record.objectType?.slug === "cover_letter" ? "cover_letter" : "cv_version";
     this.selectedId = record.id;
     this.selectedRecord = record;
@@ -255,9 +313,11 @@ export class JobDocumentsPageComponent implements OnChanges {
       sourcePath: String(record.fields?.["sourcePath"] || ""),
       outputPath: String(record.fields?.["outputPath"] || "")
     };
+    this.markClean();
   }
 
   resetEditor() {
+    if (!this.confirmDiscard()) return;
     if (this.selectedRecord) {
       this.select(this.selectedRecord);
       return;
@@ -282,6 +342,7 @@ export class JobDocumentsPageComponent implements OnChanges {
       source: record?.source ?? "web",
       metadata: record?.metadata ?? { templateKey: "job_search", source: "web", draftOnly: true }
     };
+    this.markClean();
     this.saveDocument.emit({
       input,
       ...(this.linkedApplicationId ? { applicationId: this.linkedApplicationId } : {})
@@ -292,6 +353,53 @@ export class JobDocumentsPageComponent implements OnChanges {
     const version = record.fields?.["version"] ? String(record.fields["version"]) : "Unversioned";
     const company = record.fields?.["company"] ? ` · ${String(record.fields["company"])}` : "";
     return `${version}${company}`;
+  }
+
+  scheduleSearch(value: string) {
+    this.searchInput = value;
+    if (this.searchTimer) clearTimeout(this.searchTimer);
+    this.searchTimer = setTimeout(() => {
+      this.search = value;
+      this.page = 1;
+      this.filteredCache = null;
+    }, 180);
+  }
+
+  setPage(page: number) {
+    this.page = Math.min(Math.max(1, page), this.pageCount);
+  }
+
+  applicationLabel(application: Record<string, unknown>) {
+    const role = String(application["role"] ?? application["displayName"] ?? "Application");
+    const company = String(application["company"] ?? "");
+    return company ? `${role} at ${company}` : role;
+  }
+
+  applicationId(application: Record<string, unknown>) {
+    return String(application["id"] ?? "");
+  }
+
+  isDirty() {
+    return JSON.stringify(this.form) !== this.cleanSnapshot;
+  }
+
+  private markClean() {
+    this.cleanSnapshot = JSON.stringify(this.form);
+  }
+
+  private confirmDiscard() {
+    return !this.isDirty() || typeof window === "undefined" || window.confirm("Discard unsaved document changes?");
+  }
+
+  @HostListener("window:beforeunload", ["$event"])
+  protectUnsavedChanges(event: BeforeUnloadEvent) {
+    if (!this.isDirty()) return;
+    event.preventDefault();
+    event.returnValue = "";
+  }
+
+  ngOnDestroy() {
+    if (this.searchTimer) clearTimeout(this.searchTimer);
   }
 
   private blankForm() {

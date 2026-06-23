@@ -230,6 +230,11 @@ export async function buildServer() {
     return reply.status(201).send(relationship);
   });
 
+  app.put("/api/applications/:id/document", async (request) => {
+    const params = request.params as { id: string };
+    return services.selectApplicationDocument({ ...(request.body as object), applicationId: params.id });
+  });
+
   app.get("/api/views", async (request) => {
     const query = request.query as { objectType?: string; templateKey?: string; limit?: string };
     return services.listViews({

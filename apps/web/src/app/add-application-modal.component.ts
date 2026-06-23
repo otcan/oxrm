@@ -37,19 +37,19 @@ import { XrmRecord } from "./models";
           <label>Contact<input [(ngModel)]="form.responsiblePerson" name="applicationContact"></label>
           <label>
             CV to use
-            <select [(ngModel)]="form.cvVersion" name="applicationCv">
+            <select [(ngModel)]="form.cvRecordId" name="applicationCv">
               <option value="">No CV selected</option>
               @for (cv of cvs; track cv.id) {
-                <option [value]="cv.displayName">{{ cv.displayName }}</option>
+                <option [value]="cv.id">{{ cv.displayName }}</option>
               }
             </select>
           </label>
           <label>
             Cover letter
-            <select [(ngModel)]="form.coverLetterVersion" name="applicationCoverLetter">
+            <select [(ngModel)]="form.coverLetterRecordId" name="applicationCoverLetter">
               <option value="">Not prepared</option>
               @for (coverLetter of coverLetters; track coverLetter.id) {
-                <option [value]="coverLetter.displayName">{{ coverLetterLabel(coverLetter) }}</option>
+                <option [value]="coverLetter.id">{{ coverLetterLabel(coverLetter) }}</option>
               }
             </select>
           </label>
@@ -112,8 +112,8 @@ export class AddApplicationModalComponent implements OnChanges {
       stage: "Saved",
       applicationDate: "",
       responsiblePerson: "",
-      cvVersion: "",
-      coverLetterVersion: "",
+      cvRecordId: "",
+      coverLetterRecordId: "",
       nextAction: "Choose CV and prepare application packet",
       nextActionAt: new Date().toISOString().slice(0, 10)
     };

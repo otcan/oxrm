@@ -80,14 +80,16 @@
       }
 
       @case ("Documents") {
-        <oc-job-documents-page
+        <oc-job-documents-host
           [cvs]="cvRecords()"
           [coverLetters]="coverLetterRecords()"
+          [applications]="jobApplicationRows()"
           [saving]="saving()"
           [error]="saveError()"
           [savedDocumentId]="savedDocumentId()"
           [newCoverLetter]="coverLetterDraftRequest()"
           (saveDocument)="saveDocumentFromLibrary($event)"
+          (openApplication)="openApplicationFromDocuments($event)"
         />
       }
 
@@ -216,12 +218,37 @@
     }
 
     @if (cvLibraryOpen()) {
-      <oc-cv-library-modal
-        [cvs]="cvRecords()"
-        [applications]="jobApplicationRows()"
-        (close)="closeCvLibrary()"
-        (open)="openCvRecord($event)"
-      />
+      @defer {
+        <oc-cv-library-modal
+          [cvs]="cvRecords()"
+          [applications]="jobApplicationRows()"
+          [targetApplication]="cvLibraryTargetApplication()"
+          [saving]="saving()"
+          [error]="saveError()"
+          (close)="closeCvLibrary()"
+          (open)="openCvRecord($event)"
+          (choose)="chooseCvForApplication($event)"
+          (duplicate)="duplicateDocument($event)"
+          (setDefault)="setDefaultCv($event)"
+          (archive)="archiveDocument($event)"
+        />
+      }
+    }
+
+    @if (coverLetterLibraryOpen()) {
+      @defer {
+        <oc-cover-letter-library-modal
+          [coverLetters]="coverLetterRecords()"
+          [targetApplication]="cvLibraryTargetApplication()"
+          [saving]="saving()"
+          [error]="saveError()"
+          (close)="closeCoverLetterLibrary()"
+          (open)="openCoverLetterRecord($event)"
+          (choose)="chooseCoverLetterForApplication($event)"
+          (duplicate)="duplicateDocument($event)"
+          (archive)="archiveDocument($event)"
+        />
+      }
     }
   </ng-container>
 
@@ -245,7 +272,9 @@
     (dismiss)="dismissDraft($event)"
     (runJobAction)="runJobActionFromRecord($event)"
     (openCvLibrary)="openCvLibrary()"
+    (openCoverLetterLibrary)="openCoverLetterLibrary()"
     (createCoverLetterDraft)="createCoverLetterDraft($event)"
+    (unlinkDocument)="unlinkApplicationDocument($event)"
     (createJobCoverLetterDraft)="createJobCoverLetterDraft($event)"
   />
 </oc-app-shell>

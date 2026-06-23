@@ -617,6 +617,14 @@ export const linkXrmRecordsSchema = z.object({
   createdByAgentId: z.string().uuid().optional()
 });
 
+export const selectApplicationDocumentSchema = z.object({
+  applicationId: z.string().uuid(),
+  kind: z.enum(["cv", "cover_letter"]),
+  documentId: z.string().uuid().nullable(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+  source: z.string().optional()
+});
+
 export const listXrmRelationshipsSchema = z.object({
   recordId: z.string().uuid().optional(),
   relationshipType: xrmSlugSchema.optional(),
@@ -693,6 +701,7 @@ export type UpsertXrmRecordInput = z.infer<typeof upsertXrmRecordSchema>;
 export type SearchXrmRecordsInput = z.infer<typeof searchXrmRecordsSchema>;
 export type CreateXrmRelationshipTypeInput = z.infer<typeof createXrmRelationshipTypeSchema>;
 export type LinkXrmRecordsInput = z.infer<typeof linkXrmRecordsSchema>;
+export type SelectApplicationDocumentInput = z.infer<typeof selectApplicationDocumentSchema>;
 export type ListXrmRelationshipsInput = z.infer<typeof listXrmRelationshipsSchema>;
 export type UpsertXrmSemanticFieldInput = z.infer<typeof upsertXrmSemanticFieldSchema>;
 export type UpsertXrmFieldMappingInput = z.infer<typeof upsertXrmFieldMappingSchema>;

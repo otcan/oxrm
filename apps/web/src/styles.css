@@ -2661,6 +2661,95 @@ button.compact {
   gap: 10px;
 }
 
+.document-pagination,
+.document-usage > div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.document-pagination {
+  justify-content: space-between;
+  margin-top: 12px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.document-usage {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid #d8dee8;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.document-usage button,
+.document-pagination button {
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #ffffff;
+  padding: 6px 9px;
+  color: #1d4ed8;
+  cursor: pointer;
+}
+
+.document-page-list {
+  contain: content;
+}
+
+.document-list-item {
+  content-visibility: auto;
+  contain-intrinsic-size: 72px;
+}
+
+.document-library-modal {
+  width: min(960px, 100%);
+}
+
+.document-library-modal .document-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.document-library-modal .document-row > div:first-child {
+  min-width: 0;
+}
+
+.document-library-modal .document-actions {
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.document-library-modal .document-actions button {
+  white-space: nowrap;
+}
+
+.application-cover-letter-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+}
+
+.application-cover-letter-row > div:first-child {
+  min-width: 0;
+  text-align: left;
+}
+
+.application-cover-letter-row .document-actions {
+  display: grid;
+  grid-template-columns: 1fr;
+  justify-items: stretch;
+  min-width: 96px;
+}
+
+.application-cover-letter-row .document-actions button {
+  width: 100%;
+  white-space: nowrap;
+}
+
 .document-row {
   display: flex;
   justify-content: space-between;
@@ -2972,6 +3061,15 @@ button.compact {
 }
 
 @media (max-width: 640px) {
+  .document-library-modal .document-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .document-library-modal .document-actions {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
   .sidebar {
     padding: 10px 12px 8px;
   }

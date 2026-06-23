@@ -19,6 +19,8 @@ import {
 
 @Injectable({ providedIn: "root" })
 export class CrmApiService {
+  private readonly recordListCache = new Map<string, { expiresAt: number; records: XrmRecord[] }>();
+
   async health() {
     return this.request<HealthResponse>("/api/health");
   }
@@ -130,7 +132,13 @@ export class CrmApiService {
     if (input.includeDeleted) {
       query.set("includeDeleted", "true");
     }
-    return this.request<XrmRecord[]>(`/api/xrm/records?${query.toString()}`);
+    const cacheable = (input.objectType === "cv_version" || input.objectType === "cover_letter") && !input.q && !input.includeDeleted;
+    const cacheKey = query.toString();
+    const cached = cacheable ? this.recordListCache.get(cacheKey) : undefined;
+    if (cached && cached.expiresAt > Date.now()) return cached.records;
+    const records = await this.request<XrmRecord[]>(`/api/xrm/records?${query.toString()}`);
+    if (cacheable) this.recordListCache.set(cacheKey, { expiresAt: Date.now() + 30_000, records });
+    return records;
   }
 
   async getXrmRecord(id: string) {
@@ -149,23 +157,29 @@ export class CrmApiService {
   }
 
   async createXrmRecord(input: XrmRecordInput) {
-    return this.request<XrmRecord>("/api/xrm/records", {
+    const record = await this.request<XrmRecord>("/api/xrm/records", {
       method: "POST",
       body: JSON.stringify(cleanPayload(input))
     });
+    this.recordListCache.clear();
+    return record;
   }
 
   async updateXrmRecord(input: XrmRecordInput) {
-    return this.request<XrmRecord>("/api/xrm/records", {
+    const record = await this.request<XrmRecord>("/api/xrm/records", {
       method: "POST",
       body: JSON.stringify(cleanPayload(input))
     });
+    this.recordListCache.clear();
+    return record;
   }
 
   async deleteXrmRecord(id: string) {
-    return this.request<{ deleted: boolean; recordId: string }>(`/api/xrm/records/${encodeURIComponent(id)}`, {
+    const result = await this.request<{ deleted: boolean; recordId: string }>(`/api/xrm/records/${encodeURIComponent(id)}`, {
       method: "DELETE"
     });
+    this.recordListCache.clear();
+    return result;
   }
 
   async createXrmRelationship(input: {
@@ -181,17 +195,34 @@ export class CrmApiService {
     });
   }
 
+  async selectApplicationDocument(input: {
+    applicationId: string;
+    kind: "cv" | "cover_letter";
+    documentId: string | null;
+    metadata?: Record<string, unknown>;
+    source?: string;
+  }) {
+    const { applicationId, ...body } = input;
+    return this.request<XrmRecord>(`/api/applications/${encodeURIComponent(applicationId)}/document`, {
+      method: "PUT",
+      // `null` is meaningful here: it explicitly unlinks the current document.
+      body: JSON.stringify(body)
+    });
+  }
+
   private async request<T>(path: string, init: RequestInit = {}) {
     const response = await fetch(path, {
       ...init,
       headers: {
-        "content-type": "application/json",
+        ...(init.body ? { "content-type": "application/json" } : {}),
         ...init.headers
       }
     });
 
     if (!response.ok) {
-      throw new Error(`${response.status} ${response.statusText}`.trim());
+      const payload = await response.json().catch(() => null) as { message?: string; code?: string; error?: string } | null;
+      const detail = payload?.message || payload?.code || payload?.error || response.statusText;
+      throw new Error(`${response.status} ${detail}`.trim());
     }
 
     return response.json() as Promise<T>;

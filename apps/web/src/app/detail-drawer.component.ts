@@ -179,7 +179,9 @@ type DetailTab = "overview" | "draft" | "activity";
                 [record]="selection.item"
                 [saving]="saving"
                 (openCvLibrary)="openCvLibrary.emit()"
+                (openCoverLetterLibrary)="openCoverLetterLibrary.emit()"
                 (createCoverLetterDraft)="createCoverLetterDraft.emit($event)"
+                (unlinkDocument)="unlinkDocument.emit({ application: selection.item, kind: $event })"
               />
 
               <details class="advanced-detail">
@@ -230,7 +232,9 @@ export class DetailDrawerComponent {
   @Output() dismiss = new EventEmitter<XrmRecord>();
   @Output() runJobAction = new EventEmitter<{ record: XrmRecord; action: JobWorkflowActionKey }>();
   @Output() openCvLibrary = new EventEmitter<void>();
+  @Output() openCoverLetterLibrary = new EventEmitter<void>();
   @Output() createCoverLetterDraft = new EventEmitter<XrmRecord>();
+  @Output() unlinkDocument = new EventEmitter<{ application: XrmRecord; kind: "cv" | "cover_letter" }>();
   @Output() createJobCoverLetterDraft = new EventEmitter<XrmRecord>();
 
   @ViewChild(LeadDetailComponent) leadDetail?: LeadDetailComponent;
