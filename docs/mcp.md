@@ -64,6 +64,7 @@ Example:
 - `xrm.list_views`
 - `xrm.run_view`
 - `job_search.get_setup`
+- `job_search.get_setup_next`
 
 ## Write Tools
 
@@ -145,6 +146,7 @@ Read the job-search setup through a tool:
 
 ```bash
 ./oxrm cli mcp:call job_search.get_setup --input '{}'
+./oxrm cli mcp:call job_search.get_setup_next --input '{}'
 ```
 
 Record a note:

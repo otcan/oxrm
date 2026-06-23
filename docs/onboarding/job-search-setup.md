@@ -10,6 +10,7 @@ human and an assistant can operate together.
 ./oxrm ready
 ./oxrm cli setup:job-search
 ./oxrm cli setup:job-search:get
+./oxrm cli setup:job-search:next
 ./oxrm urls
 ```
 
@@ -29,8 +30,25 @@ The setup flow writes normal XRM records:
   variants, drafting cover letters, and preparing follow-ups
 - `automation_timer` records for daily import/scoring and daily review/drafts
 - an `operator_playbook` record with human and agent instructions
+- `setup_todo` records for open setup gaps and warnings
 
 No separate setup table is used. Agents and humans read the same XRM records.
+
+## Readiness contract
+
+Every setup response includes:
+
+- `readinessScore`
+- `todos`
+- `warnings`
+- `agentDirections`
+- `nextAction`
+- `suggestedPrompt`
+
+Agents should resolve blocking todos before importing, scoring, drafting, or
+creating application records. Warnings do not block local work, but they should
+change agent behavior. For example, if the base CV is missing, the agent should
+ask for it before drafting CV variants.
 
 ## Sources
 
@@ -107,6 +125,7 @@ execute the loop until scheduled execution is wired for the relevant source.
 ./oxrm cli mcp:read oxrm://setup/job-search
 ./oxrm cli mcp:read oxrm://playbook/job-search
 ./oxrm cli mcp:call job_search.get_setup --input '{}'
+./oxrm cli mcp:call job_search.get_setup_next --input '{}'
 ```
 
 ## Custom setup

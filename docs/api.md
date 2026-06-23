@@ -42,7 +42,10 @@ curl -fsS http://127.0.0.1:18291/api/views
 ## Job Search Setup
 
 - `GET /api/setup/job-search`: read source configuration, document policy, fit
-  rubric, timers, action blueprints, and operator playbook.
+  rubric, timers, action blueprints, operator playbook, readiness score, setup
+  todos, warnings, and agent directions.
+- `GET /api/setup/job-search/next`: read the focused next-action contract for
+  agents, including open todos, warnings, directions, and a copyable prompt.
 - `POST /api/setup/job-search`: configure the job-search setup records. The API
   writes XRM records and relationships, then returns the same summary shape as
   `GET`.

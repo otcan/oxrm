@@ -150,6 +150,7 @@ async function main() {
             "job:action JOB_ID ACTION [--reason TEXT]",
             "setup:job-search [--input '{...}']",
             "setup:job-search:get",
+            "setup:job-search:next",
             "queue:due",
             "task:list [--status open]",
             "task:create --title TITLE [--lead-id ID] [--due-at ISO]",
@@ -434,6 +435,10 @@ async function main() {
 
     case "setup:job-search:get":
       print(await requestApi(ctx, "/api/setup/job-search"));
+      break;
+
+    case "setup:job-search:next":
+      print(await requestApi(ctx, "/api/setup/job-search/next"));
       break;
 
     case "queue:due":

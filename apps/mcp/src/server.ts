@@ -541,6 +541,13 @@ export async function buildMcpHttpServer() {
     );
 
     server.tool(
+      "job_search.get_setup_next",
+      "Read job-search setup readiness, todos, warnings, and the safest next agent action.",
+      {},
+      async () => toContent(await tools.services.getJobSearchSetupNext())
+    );
+
+    server.tool(
       "job_search.configure_setup",
       "Create or update job-search onboarding setup as XRM records. Use synthetic values in public demos.",
       jobSearchSetupToolSchema,

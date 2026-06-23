@@ -397,6 +397,26 @@ const builtInObjectTypes = [
     ]
   },
   {
+    slug: "setup_todo",
+    label: "Setup Todo",
+    pluralLabel: "Setup Todos",
+    icon: "list-checks",
+    displayField: "title",
+    templateKey: "job_search",
+    fields: [
+      { key: "title", label: "Title", dataType: "text", required: true, indexed: true },
+      { key: "key", label: "Key", dataType: "text", indexed: true },
+      { key: "templateKey", label: "Template", dataType: "text", indexed: true },
+      { key: "category", label: "Category", dataType: "text", indexed: true },
+      { key: "severity", label: "Severity", dataType: "text", indexed: true },
+      { key: "owner", label: "Owner", dataType: "text", indexed: true },
+      { key: "status", label: "Status", dataType: "text", indexed: true },
+      { key: "why", label: "Why", dataType: "long_text" },
+      { key: "suggestedAction", label: "Suggested action", dataType: "long_text" },
+      { key: "agentInstruction", label: "Agent instruction", dataType: "long_text" }
+    ]
+  },
+  {
     slug: "outreach_source_config",
     label: "Outreach Source",
     pluralLabel: "Outreach Sources",
@@ -708,7 +728,8 @@ function viewWorkspaceConfig(key: string, index: number) {
     "job_search.action_blueprints",
     "job_search.documents",
     "job_search.cover_letters",
-    "job_search.approvals"
+    "job_search.approvals",
+    "job_search.setup_todos"
   ]);
 
   return {
@@ -975,6 +996,21 @@ try {
       columns: ["title", "cadence", "nextRunAt", "blueprint", "approvalRequired", "status"],
       filters: [],
       sort: [{ field: "nextRunAt", direction: "asc" }],
+      isDefault: true
+    },
+    {
+      key: "job_search.setup_todos",
+      name: "Setup Todos",
+      description: "Open setup gaps and warnings that guide humans, agents, and system setup.",
+      objectType: "setup_todo",
+      templateKey: "job_search",
+      layout: "queue",
+      columns: ["title", "severity", "owner", "category", "status", "suggestedAction"],
+      filters: [{ field: "templateKey", operator: "equals", value: "job_search" }],
+      sort: [
+        { field: "severity", direction: "asc" },
+        { field: "category", direction: "asc" }
+      ],
       isDefault: true
     },
     {

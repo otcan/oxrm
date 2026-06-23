@@ -214,6 +214,28 @@ type ViewObjectType = z.infer<typeof viewObjectTypeSchema>;
 type ViewFilter = z.infer<typeof viewFilterSchema>;
 type ViewSort = z.infer<typeof viewSortSchema>;
 type JobSearchSetup = z.infer<typeof jobSearchSetupSchema>;
+export type SetupSeverity = "blocking" | "warning" | "suggestion";
+export type SetupOwner = "human" | "agent" | "system";
+
+export interface JobSearchSetupTodo {
+  key: string;
+  category: string;
+  severity: SetupSeverity;
+  owner: SetupOwner;
+  status: "open";
+  title: string;
+  why: string;
+  suggestedAction: string;
+  agentInstruction: string;
+}
+
+export interface JobSearchSetupWarning {
+  key: string;
+  category: string;
+  severity: "warning";
+  message: string;
+  suggestedAction: string;
+}
 
 const legacyViewObjectTypes = ["lead", "person", "company", "task", "event"] as const;
 type LegacyViewObjectType = (typeof legacyViewObjectTypes)[number];
@@ -625,6 +647,279 @@ function jobSearchSetupGaps(input: {
   if (input.blueprints.length === 0) gaps.push("Add action blueprints for fit scoring, CV editing, cover letters, and follow-ups.");
   if (!input.playbook) gaps.push("Generate the job search playbook.");
   return gaps;
+}
+
+function hasFieldText(record: { fields?: unknown; [key: string]: unknown } | null | undefined, key: string) {
+  return xrmField(record, key).trim().length > 0;
+}
+
+function buildJobSearchSetupReadiness(input: {
+  sources: Array<{ fields?: unknown; externalKey?: string | null; displayName?: string; [key: string]: unknown }>;
+  timers: Array<{ fields?: unknown; externalKey?: string | null; displayName?: string; [key: string]: unknown }>;
+  blueprints: Array<{ fields?: unknown; externalKey?: string | null; displayName?: string; [key: string]: unknown }>;
+  views: Array<{ key: string }>;
+  playbook?: { fields?: unknown; externalKey?: string | null; displayName?: string; [key: string]: unknown } | undefined;
+}) {
+  const todos: JobSearchSetupTodo[] = [];
+  const warnings: JobSearchSetupWarning[] = [];
+  const viewKeys = new Set(input.views.map((view) => view.key));
+  const hasBlueprint = (kind: string) =>
+    input.blueprints.some((record) => xrmField(record, "blueprintKind") === kind || record.externalKey?.includes(kind));
+  const hasTimer = (key: string) => input.timers.some((record) => record.externalKey?.includes(key) || record.displayName?.toLowerCase().includes(key));
+
+  const todo = (item: Omit<JobSearchSetupTodo, "status">) => todos.push({ ...item, status: "open" });
+  const warning = (item: Omit<JobSearchSetupWarning, "severity">) => warnings.push({ ...item, severity: "warning" });
+
+  if (!input.playbook) {
+    todo({
+      key: "playbook.missing",
+      category: "playbook",
+      severity: "blocking",
+      owner: "system",
+      title: "Generate the job-search playbook",
+      why: "Agents need a single operating contract before they import, score, draft, or update job-search records.",
+      suggestedAction: "Run ./oxrm cli setup:job-search to generate the playbook and setup records.",
+      agentInstruction: "Do not operate the job-search workflow until the playbook exists."
+    });
+  }
+
+  if (input.sources.length === 0) {
+    todo({
+      key: "sources.missing",
+      category: "sources",
+      severity: "blocking",
+      owner: "human",
+      title: "Add at least one job source",
+      why: "The agent cannot import job postings or alerts without a configured source.",
+      suggestedAction: "Add a job board, company career page, recruiter inbox, CSV import, API, referral list, or manual URL source.",
+      agentInstruction: "Ask the human for sources before creating job postings."
+    });
+  }
+
+  for (const source of input.sources) {
+    const title = xrmField(source, "title", source.displayName ?? "Source");
+    const keySuffix = slugPart(title);
+    if (!hasFieldText(source, "importInstructions")) {
+      warning({
+        key: `sources.${keySuffix}.missing_import_instructions`,
+        category: "sources",
+        message: `${title} has no import instructions.`,
+        suggestedAction: "Describe what fields the agent should capture, how to dedupe, and which credentials or privacy limits apply."
+      });
+    }
+    const channel = xrmField(source, "channel", "manual");
+    if (channel !== "manual" && !hasFieldText(source, "sourceUrl")) {
+      warning({
+        key: `sources.${keySuffix}.missing_url`,
+        category: "sources",
+        message: `${title} has no URL or mailbox reference.`,
+        suggestedAction: "Add a source URL, mailbox reference, file path, or API endpoint so the agent knows where to look."
+      });
+    }
+  }
+
+  if (!hasBlueprint("fit-rubric")) {
+    todo({
+      key: "fit_rubric.missing",
+      category: "fit",
+      severity: "blocking",
+      owner: "human",
+      title: "Define the fit calculation blueprint",
+      why: "The agent needs a rubric and threshold before it can rank job postings.",
+      suggestedAction: "Configure must-have criteria, exclusions, threshold, and evidence discipline.",
+      agentInstruction: "Do not score jobs until the rubric exists."
+    });
+  } else {
+    const rubric = input.blueprints.find((record) => xrmField(record, "blueprintKind") === "fit-rubric" || record.externalKey?.includes("fit-rubric"));
+    const inputs = xrmField(rubric, "inputs");
+    if (inputs.includes("not specified")) {
+      warning({
+        key: "fit_rubric.criteria_weak",
+        category: "fit",
+        message: "Fit rubric exists, but some must-have, nice-to-have, or exclusion criteria are not specified.",
+        suggestedAction: "Add explicit criteria so LLM scoring is disciplined and explainable."
+      });
+    }
+  }
+
+  if (!hasBlueprint("cv-editor")) {
+    todo({
+      key: "cv.blueprint_missing",
+      category: "documents",
+      severity: "blocking",
+      owner: "human",
+      title: "Define the CV editing blueprint",
+      why: "The agent needs document boundaries before it can safely draft CV variants.",
+      suggestedAction: "Configure CV mode, base CV path, variant policy, and editing rules.",
+      agentInstruction: "Do not draft CV variants until the CV blueprint exists."
+    });
+  } else {
+    const cv = input.blueprints.find((record) => xrmField(record, "blueprintKind") === "cv-editor" || record.externalKey?.includes("cv-editor"));
+    if (xrmField(cv, "inputs").includes("not set")) {
+      warning({
+        key: "cv.base_missing",
+        category: "documents",
+        message: "No base CV path is linked in the CV blueprint.",
+        suggestedAction: "Link a base CV file or record so the agent can create variants without inventing source material."
+      });
+    }
+  }
+
+  if (!hasBlueprint("cover-letter")) {
+    todo({
+      key: "cover_letter.blueprint_missing",
+      category: "documents",
+      severity: "blocking",
+      owner: "human",
+      title: "Define the cover-letter blueprint",
+      why: "The agent needs a policy for when cover letters are drafted and which template to use.",
+      suggestedAction: "Configure cover-letter mode, threshold, template path, and drafting instructions.",
+      agentInstruction: "Do not draft cover letters until the cover-letter policy exists."
+    });
+  } else {
+    const cover = input.blueprints.find((record) => xrmField(record, "blueprintKind") === "cover-letter" || record.externalKey?.includes("cover-letter"));
+    if (!xrmField(cover, "automationLevel").includes("never") && xrmField(cover, "inputs").includes("not set")) {
+      warning({
+        key: "cover_letter.template_missing",
+        category: "documents",
+        message: "Cover-letter drafting is enabled but no template path is linked.",
+        suggestedAction: "Add a cover-letter template path or switch the policy to manual/never."
+      });
+    }
+  }
+
+  if (!hasBlueprint("follow-up")) {
+    todo({
+      key: "follow_up.blueprint_missing",
+      category: "followups",
+      severity: "blocking",
+      owner: "human",
+      title: "Define the follow-up blueprint",
+      why: "Follow-up drafting needs a rule for last touch, due dates, responsible person, and approval.",
+      suggestedAction: "Configure the follow-up action blueprint and keep external sends human-approved.",
+      agentInstruction: "Do not draft recruiter follow-ups until the follow-up blueprint exists."
+    });
+  }
+
+  if (!hasTimer("import") || !hasTimer("review")) {
+    todo({
+      key: "timers.missing",
+      category: "automation",
+      severity: "blocking",
+      owner: "system",
+      title: "Create daily import and review timers",
+      why: "The daily agent loop needs explicit cadence records even before background scheduling is automated.",
+      suggestedAction: "Run setup again or add import/review timer records.",
+      agentInstruction: "Use timers as operating instructions; do not assume a background job already ran."
+    });
+  }
+
+  const requiredViews = [
+    ["job_search.jobs", "Job postings view"],
+    ["job_search.job_fits", "Job fit view"],
+    ["job_search.applications", "Applications view"]
+  ] as const;
+  for (const [key, label] of requiredViews) {
+    if (!viewKeys.has(key)) {
+      todo({
+        key: `views.${key}.missing`,
+        category: "views",
+        severity: "blocking",
+        owner: "system",
+        title: `Add ${label}`,
+        why: "Agents and humans need saved views to inspect the workflow consistently.",
+        suggestedAction: `Create or restore the ${key} saved view.`,
+        agentInstruction: `Do not rely only on ad hoc search when ${key} is missing.`
+      });
+    }
+  }
+
+  const recommendedViews = [
+    ["job_search.sources", "sources"],
+    ["job_search.documents", "CV/document drafts"],
+    ["job_search.cover_letters", "cover letters"],
+    ["job_search.followups_due", "follow-ups due"],
+    ["job_search.action_suggestions", "action suggestions"]
+  ] as const;
+  for (const [key, label] of recommendedViews) {
+    if (!viewKeys.has(key)) {
+      warning({
+        key: `views.${key}.missing`,
+        category: "views",
+        message: `Recommended view is missing: ${label}.`,
+        suggestedAction: `Create or restore ${key} so the setup is easier to operate.`
+      });
+    }
+  }
+
+  const hasApprovalLanguage = input.blueprints.some((record) => xrmField(record, "approvalRequired").toLowerCase().includes("required"));
+  if (!hasApprovalLanguage) {
+    warning({
+      key: "approval.boundary_unclear",
+      category: "approval",
+      message: "No clear approval boundary was found in action blueprints.",
+      suggestedAction: "Mark external sends, uploads, applications, and recruiter messages as human-approved only."
+    });
+  }
+
+  const readinessScore = Math.max(
+    0,
+    Math.min(
+      100,
+      100 -
+        todos.filter((item) => item.severity === "blocking").length * 14 -
+        warnings.length * 6 -
+        todos.filter((item) => item.severity === "suggestion").length * 3
+    )
+  );
+  const blockingTodos = todos.filter((item) => item.severity === "blocking");
+  const warningTodos: JobSearchSetupTodo[] = warnings.map((item) => ({
+    key: item.key,
+    category: item.category,
+    severity: "warning",
+    owner: "human",
+    status: "open",
+    title: item.message,
+    why: item.message,
+    suggestedAction: item.suggestedAction,
+    agentInstruction: "Warn the human and adapt the related agent action until this setup item is resolved."
+  }));
+  const allTodos = [...todos, ...warningTodos];
+  const agentDirections = [
+    "Read oxrm://setup/job-search and oxrm://playbook/job-search before writing job-search records.",
+    blockingTodos.length > 0
+      ? "Resolve blocking setup todos before importing, scoring, drafting, or creating application records."
+      : "Setup has no blocking gaps; run the daily loop: read sources, inspect postings, score fit, propose actions, and draft only.",
+    warnings.some((item) => item.key.startsWith("cv."))
+      ? "If the base CV is missing, ask the human for it before drafting variants."
+      : "When drafting CV variants, preserve factual claims and keep drafts local until approval.",
+    warnings.some((item) => item.key.startsWith("cover_letter."))
+      ? "If the cover-letter template is missing, ask the human for it or keep cover letters manual."
+      : "Draft cover letters only when the configured policy and threshold allow it.",
+    "Do not send emails, LinkedIn messages, CVs, cover letters, or applications from MCP tools."
+  ];
+  const nextAction =
+    blockingTodos[0]?.suggestedAction ??
+    warnings[0]?.suggestedAction ??
+    "Run the daily job-search loop and create approval-gated suggestions for high-fit opportunities.";
+  const suggestedPrompt = [
+    "Use oXRM as the local source of truth for my job search.",
+    "Read the setup, playbook, todos, warnings, sources, views, and today's queue.",
+    blockingTodos.length > 0
+      ? "List blocking setup todos first and ask me for the missing human-owned information."
+      : "Run the daily review: inspect sources, job postings, job fits, applications, and follow-ups due.",
+    "Draft only. Do not send, upload, apply, or claim any external action happened unless I confirm it."
+  ].join("\n");
+
+  return {
+    configured: blockingTodos.length === 0,
+    readinessScore,
+    todos: allTodos,
+    warnings,
+    agentDirections,
+    nextAction,
+    suggestedPrompt
+  };
 }
 
 function summarizeRelationship(
@@ -1511,11 +1806,12 @@ export function createCrmServices({ db, backupsRequired = false }: ServiceContex
     },
 
     async getJobSearchSetup() {
-      const [playbooks, sources, timers, blueprints] = await Promise.all([
+      const [playbooks, sources, timers, blueprints, views] = await Promise.all([
         this.searchXrmRecords({ objectType: "operator_playbook", limit: 200 }),
         this.searchXrmRecords({ objectType: "source_config", limit: 200 }),
         this.searchXrmRecords({ objectType: "automation_timer", limit: 200 }),
-        this.searchXrmRecords({ objectType: "action_blueprint", limit: 200 })
+        this.searchXrmRecords({ objectType: "action_blueprint", limit: 200 }),
+        this.listViews({ templateKey: "job_search", limit: 200 })
       ]);
       const jobSearchOnly = (record: { externalKey?: string | null; metadata?: unknown }) =>
         record.externalKey?.startsWith("job-search:") || jsonObject(record.metadata)["templateKey"] === "job_search";
@@ -1534,14 +1830,22 @@ export function createCrmServices({ db, backupsRequired = false }: ServiceContex
       const playbookText = xrmField(playbook, "playbookBody") || buildJobSearchSetupPlaybook(normalizedInput);
       const agentPrompt = xrmField(playbook, "agentInstructions") || buildJobSearchAgentPrompt(normalizedInput);
       const gaps = jobSearchSetupGaps({ sources: jobSources, timers: jobTimers, blueprints: jobBlueprints, playbook });
+      const readiness = buildJobSearchSetupReadiness({
+        sources: jobSources,
+        timers: jobTimers,
+        blueprints: jobBlueprints,
+        views,
+        playbook
+      });
 
       return {
-        configured: gaps.length === 0,
+        configured: readiness.configured,
         templateKey: "job_search",
         profile: playbook ?? null,
         sources: jobSources,
         timers: jobTimers,
         blueprints: jobBlueprints,
+        views,
         cvStrategy: findBlueprint("cv-editor") ?? null,
         coverLetterStrategy: findBlueprint("cover-letter") ?? null,
         fitRubric: findBlueprint("fit-rubric") ?? null,
@@ -1549,6 +1853,12 @@ export function createCrmServices({ db, backupsRequired = false }: ServiceContex
         playbookText,
         agentPrompt,
         gaps,
+        readinessScore: readiness.readinessScore,
+        todos: readiness.todos,
+        warnings: readiness.warnings,
+        agentDirections: readiness.agentDirections,
+        nextAction: readiness.nextAction,
+        suggestedPrompt: readiness.suggestedPrompt,
         nextSteps: [
           "Add or verify sources.",
           "Confirm CV and cover letter templates.",
@@ -1557,6 +1867,78 @@ export function createCrmServices({ db, backupsRequired = false }: ServiceContex
           "Draft only, then wait for human approval before external action."
         ]
       };
+    },
+
+    async getJobSearchSetupNext() {
+      const setup = await this.getJobSearchSetup();
+      return {
+        configured: setup.configured,
+        readinessScore: setup.readinessScore,
+        nextAction: setup.nextAction,
+        todos: setup.todos,
+        warnings: setup.warnings,
+        agentDirections: setup.agentDirections,
+        suggestedPrompt: setup.suggestedPrompt,
+        commands: [
+          "./oxrm cli setup:job-search:get",
+          "./oxrm cli mcp:read oxrm://setup/job-search",
+          "./oxrm cli mcp:read oxrm://playbook/job-search",
+          "./oxrm cli mcp:read crm://queue/today"
+        ]
+      };
+    },
+
+    async syncJobSearchSetupTodos(
+      items: Array<JobSearchSetupTodo | (JobSearchSetupWarning & { owner?: SetupOwner; status?: "open"; title?: string; why?: string; agentInstruction?: string })>
+    ) {
+      const activeKeys = new Set(items.map((item) => `job-search:setup:todo:${item.key}`));
+      await Promise.all(
+        items.map((item) => {
+          const title = "title" in item && item.title ? item.title : "message" in item ? item.message : item.key;
+          const why = "why" in item && item.why ? item.why : "message" in item ? item.message : "";
+          const owner = "owner" in item && item.owner ? item.owner : "human";
+          const agentInstruction =
+            "agentInstruction" in item && item.agentInstruction
+              ? item.agentInstruction
+              : "Address or acknowledge this setup warning before running the related agent action.";
+          return this.upsertXrmRecord({
+            objectType: "setup_todo",
+            externalKey: `job-search:setup:todo:${item.key}`,
+            displayName: title,
+            fields: {
+              key: item.key,
+              templateKey: "job_search",
+              category: item.category,
+              severity: item.severity,
+              owner,
+              status: "open",
+              title,
+              why,
+              suggestedAction: item.suggestedAction,
+              agentInstruction
+            },
+            status: "open",
+            source: "job-search-setup",
+            metadata: { templateKey: "job_search", source: "job-search-setup" }
+          });
+        })
+      );
+
+      const existing = await this.searchXrmRecords({ objectType: "setup_todo", limit: 500 });
+      await Promise.all(
+        existing
+          .filter((record) => record.externalKey?.startsWith("job-search:setup:todo:") && !activeKeys.has(record.externalKey))
+          .map((record) =>
+            db
+              .update(xrmRecords)
+              .set({
+                status: "done",
+                fields: { ...jsonObject(record.fields), status: "done" },
+                updatedAt: new Date()
+              })
+              .where(eq(xrmRecords.id, record.id))
+          )
+      );
     },
 
     async configureJobSearchSetup(input: unknown = {}) {
@@ -1761,6 +2143,8 @@ export function createCrmServices({ db, backupsRequired = false }: ServiceContex
         metadata
       });
 
+      const setup = await this.getJobSearchSetup();
+      await this.syncJobSearchSetupTodos(setup.todos);
       return this.getJobSearchSetup();
     },
 

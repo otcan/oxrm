@@ -711,7 +711,7 @@ h2 {
 
 .setup-status {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 10px;
 }
 
@@ -767,6 +767,81 @@ h2 {
 .setup-section-header p {
   max-width: 760px;
   color: #64748b;
+  line-height: 1.45;
+}
+
+.setup-readiness-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.setup-todo-list,
+.setup-warning-list,
+.setup-agent-directions {
+  display: grid;
+  gap: 10px;
+}
+
+.setup-todo-item,
+.setup-warning-item {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #dbeafe;
+  border-radius: 8px;
+  background: #eff6ff;
+}
+
+.setup-todo-item.blocking {
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+.setup-todo-item.suggestion {
+  border-color: #d9f99d;
+  background: #f7fee7;
+}
+
+.setup-todo-item span {
+  display: block;
+  margin-bottom: 6px;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.setup-todo-item strong,
+.setup-warning-item strong {
+  display: block;
+  color: #0f172a;
+}
+
+.setup-todo-item p,
+.setup-warning-item p {
+  margin: 8px 0 0;
+  color: #475569;
+  line-height: 1.45;
+}
+
+.setup-warning-list {
+  padding-top: 12px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.setup-warning-list h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.setup-warning-item {
+  border-color: #fde68a;
+  background: #fffbeb;
+}
+
+.setup-agent-directions {
+  margin: 0;
+  padding-left: 18px;
+  color: #475569;
   line-height: 1.45;
 }
 

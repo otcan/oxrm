@@ -202,6 +202,10 @@ export async function buildServer() {
     return services.getJobSearchSetup();
   });
 
+  app.get("/api/setup/job-search/next", async () => {
+    return services.getJobSearchSetupNext();
+  });
+
   app.post("/api/setup/job-search", async (request, reply) => {
     const setup = await services.configureJobSearchSetup(request.body);
     return reply.status(201).send(setup);

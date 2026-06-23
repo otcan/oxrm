@@ -1,7 +1,7 @@
 import { CommonModule } from "@angular/common";
 import { ChangeDetectionStrategy, Component, EventEmitter, Input, OnChanges, Output, SimpleChanges } from "@angular/core";
 import { FormsModule } from "@angular/forms";
-import { JobSearchSetupInput, JobSearchSetupSourceInput, JobSearchSetupSummary, XrmRecord } from "./models";
+import { JobSearchSetupInput, JobSearchSetupSourceInput, JobSearchSetupSummary, JobSearchSetupTodo, XrmRecord } from "./models";
 
 @Component({
   selector: "oc-job-search-setup-page",
@@ -13,6 +13,10 @@ import { JobSearchSetupInput, JobSearchSetupSourceInput, JobSearchSetupSummary, 
         <div>
           <span>Status</span>
           <strong>{{ summary?.configured ? "Configured" : "Needs setup" }}</strong>
+        </div>
+        <div>
+          <span>Readiness</span>
+          <strong>{{ summary?.readinessScore ?? 0 }}%</strong>
         </div>
         <div>
           <span>Sources</span>
@@ -28,16 +32,31 @@ import { JobSearchSetupInput, JobSearchSetupSourceInput, JobSearchSetupSummary, 
         </div>
       </div>
 
-      @if (summary?.gaps?.length) {
-        <section class="panel setup-gap-panel">
-          <h2>Gaps</h2>
-          <ul>
-            @for (gap of summary?.gaps; track gap) {
-              <li>{{ gap }}</li>
+      <section class="panel setup-readiness-panel">
+        <header class="setup-section-header">
+          <div>
+            <h2>Setup todos</h2>
+            <p>{{ summary?.nextAction || "Save setup to generate agent-ready next actions." }}</p>
+          </div>
+        </header>
+
+        @if (summary?.todos?.length) {
+          <div class="setup-todo-list">
+            @for (todo of summary?.todos; track todo.key) {
+              <article class="setup-todo-item" [class.blocking]="todo.severity === 'blocking'" [class.suggestion]="todo.severity === 'suggestion'">
+                <div>
+                  <span>{{ todo.severity }} · {{ todo.owner }} · {{ todo.category }}</span>
+                  <strong>{{ todo.title }}</strong>
+                  <p>{{ todo.why }}</p>
+                  <p>{{ todo.suggestedAction }}</p>
+                </div>
+              </article>
             }
-          </ul>
-        </section>
-      }
+          </div>
+        } @else {
+          <div class="empty">No setup todos. Run the daily agent loop and keep external actions approval-gated.</div>
+        }
+      </section>
 
       <section class="setup-layout">
         <form class="panel setup-form" (ngSubmit)="save()">
@@ -233,6 +252,20 @@ import { JobSearchSetupInput, JobSearchSetupSourceInput, JobSearchSetupSummary, 
           </section>
 
           <section class="panel setup-playbook-panel">
+            <h2>Agent directions</h2>
+            <ul class="setup-agent-directions">
+              @for (direction of summary?.agentDirections || []; track direction) {
+                <li>{{ direction }}</li>
+              }
+            </ul>
+          </section>
+
+          <section class="panel setup-playbook-panel">
+            <h2>Copyable prompt</h2>
+            <pre>{{ summary?.suggestedPrompt || "Save setup to generate a setup-aware agent prompt." }}</pre>
+          </section>
+
+          <section class="panel setup-playbook-panel">
             <h2>Agent prompt</h2>
             <pre>{{ summary?.agentPrompt || "Save setup to generate the agent prompt." }}</pre>
           </section>
@@ -318,7 +351,8 @@ export class JobSearchSetupPageComponent implements OnChanges {
       summary.fitRubric,
       summary.cvStrategy,
       summary.coverLetterStrategy,
-      summary.followUpStrategy
+      summary.followUpStrategy,
+      ...this.setupTodoRecords(summary)
     ].filter((record): record is XrmRecord => Boolean(record));
   }
 
@@ -347,6 +381,38 @@ export class JobSearchSetupPageComponent implements OnChanges {
   private timerCadence(kind: "import" | "review", fallback: string) {
     const timer = this.summary?.timers.find((record) => record.externalKey?.includes(kind) || record.displayName.toLowerCase().includes(kind));
     return timer ? this.field(timer, "cadence", fallback) : fallback;
+  }
+
+  private setupTodoRecords(summary: JobSearchSetupSummary): XrmRecord[] {
+    const records = summary.todos.slice(0, 4).map((todo) => this.todoRecord(todo));
+    return records;
+  }
+
+  private todoRecord(todo: JobSearchSetupTodo): XrmRecord {
+    return {
+      id: todo.key,
+      externalKey: `job-search:setup:todo:${todo.key}`,
+      displayName: todo.title,
+      fields: {
+        title: todo.title,
+        status: todo.status,
+        severity: todo.severity,
+        owner: todo.owner,
+        category: todo.category
+      },
+      status: todo.status,
+      source: "job-search-setup",
+      createdAt: "",
+      updatedAt: "",
+      objectType: {
+        id: "setup_todo",
+        slug: "setup_todo",
+        label: "Setup Todo",
+        pluralLabel: "Setup Todos",
+        displayField: "title",
+        templateKey: "job_search"
+      }
+    };
   }
 }
 

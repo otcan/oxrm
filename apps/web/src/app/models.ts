@@ -396,6 +396,26 @@ export interface JobSearchSetupInput {
   notes?: string;
 }
 
+export interface JobSearchSetupTodo {
+  key: string;
+  category: string;
+  severity: "blocking" | "warning" | "suggestion";
+  owner: "human" | "agent" | "system";
+  status: "open";
+  title: string;
+  why: string;
+  suggestedAction: string;
+  agentInstruction: string;
+}
+
+export interface JobSearchSetupWarning {
+  key: string;
+  category: string;
+  severity: "warning";
+  message: string;
+  suggestedAction: string;
+}
+
 export interface JobSearchSetupSummary {
   configured: boolean;
   templateKey: "job_search";
@@ -403,6 +423,7 @@ export interface JobSearchSetupSummary {
   sources: XrmRecord[];
   timers: XrmRecord[];
   blueprints: XrmRecord[];
+  views: ViewDefinition[];
   cvStrategy: XrmRecord | null;
   coverLetterStrategy: XrmRecord | null;
   fitRubric: XrmRecord | null;
@@ -410,6 +431,12 @@ export interface JobSearchSetupSummary {
   playbookText: string;
   agentPrompt: string;
   gaps: string[];
+  readinessScore: number;
+  todos: JobSearchSetupTodo[];
+  warnings: JobSearchSetupWarning[];
+  agentDirections: string[];
+  nextAction: string;
+  suggestedPrompt: string;
   nextSteps: string[];
 }
 

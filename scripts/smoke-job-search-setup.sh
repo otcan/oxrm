@@ -21,6 +21,9 @@ node -e '
   if (!Array.isArray(data.sources) || data.sources.length < 1) fail("job_search_setup_missing_sources");
   if (!Array.isArray(data.timers) || data.timers.length < 2) fail("job_search_setup_missing_timers");
   if (!Array.isArray(data.blueprints) || data.blueprints.length < 4) fail("job_search_setup_missing_blueprints");
+  if (typeof data.readinessScore !== "number" || data.readinessScore < 1) fail("job_search_setup_missing_readiness");
+  if (!Array.isArray(data.todos) || !Array.isArray(data.warnings)) fail("job_search_setup_missing_todos");
+  if (!Array.isArray(data.agentDirections) || data.agentDirections.length < 1) fail("job_search_setup_missing_agent_directions");
   if (!String(data.playbookText || "").includes("Job search operating playbook")) fail("job_search_setup_missing_playbook_text");
 ' "$tmp_dir/configured.json"
 
@@ -34,6 +37,16 @@ node -e '
   }
 ' "$tmp_dir/read.json"
 
+./oxrm cli setup:job-search:next >"$tmp_dir/next.json"
+node -e '
+  const fs = require("node:fs");
+  const data = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+  if (!Array.isArray(data.agentDirections) || !String(data.suggestedPrompt || "").includes("Draft only")) {
+    console.error(JSON.stringify({ error: "job_search_setup_next_failed", data }, null, 2));
+    process.exit(1);
+  }
+' "$tmp_dir/next.json"
+
 ./oxrm cli mcp:read oxrm://setup/job-search >"$tmp_dir/mcp-setup.json"
 grep -F "Configured job search operating playbook" "$tmp_dir/mcp-setup.json" >/dev/null
 
@@ -42,5 +55,8 @@ grep -F "Job search operating playbook" "$tmp_dir/mcp-playbook.json" >/dev/null
 
 ./oxrm cli mcp:call job_search.get_setup --input '{}' >"$tmp_dir/mcp-tool.json"
 grep -F "job_search" "$tmp_dir/mcp-tool.json" >/dev/null
+
+./oxrm cli mcp:call job_search.get_setup_next --input '{}' >"$tmp_dir/mcp-next-tool.json"
+grep -F "agentDirections" "$tmp_dir/mcp-next-tool.json" >/dev/null
 
 echo "Job search setup smoke passed."

@@ -63,6 +63,7 @@ After the stack is running:
 ```bash
 ./oxrm -i personal cli setup:job-search
 ./oxrm -i personal cli setup:job-search:get
+./oxrm -i personal cli setup:job-search:next
 ```
 
 Open:

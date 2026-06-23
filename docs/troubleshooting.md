@@ -148,6 +148,7 @@ Use this after setup, upgrades, or demo deploys:
 
 ```bash
 ./oxrm cli setup:job-search:get
+./oxrm cli setup:job-search:next
 ./oxrm cli mcp:read oxrm://setup/job-search
 ./oxrm cli mcp:read oxrm://playbook/job-search
 ```

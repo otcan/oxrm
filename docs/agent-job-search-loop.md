@@ -7,6 +7,7 @@ This is the operating manual for a local assistant working with oXRM.
 ```bash
 ./oxrm cli mcp:read oxrm://setup/job-search
 ./oxrm cli mcp:read oxrm://playbook/job-search
+./oxrm cli mcp:call job_search.get_setup_next --input '{}'
 ./oxrm cli mcp:call xrm.run_view --input '{"key":"job_search.sources"}'
 ./oxrm cli mcp:call xrm.run_view --input '{"key":"job_search.jobs"}'
 ./oxrm cli mcp:call xrm.run_view --input '{"key":"job_search.applications"}'
@@ -34,12 +35,13 @@ records.
 Run or inspect the job-search setup:
 
 1. Run `./oxrm cli setup:job-search:get`.
-2. Read `oxrm://setup/job-search`.
-3. Read `oxrm://playbook/job-search`.
-4. Tell me what sources, CV policy, cover-letter policy, fit rubric, timers,
+2. Run `./oxrm cli setup:job-search:next`.
+3. Read `oxrm://setup/job-search`.
+4. Read `oxrm://playbook/job-search`.
+5. Tell me what sources, CV policy, cover-letter policy, fit rubric, timers,
    and approval boundaries are configured.
-5. List missing setup items.
-6. Do not send, upload, apply, or contact anyone.
+6. List blocking todos first, then warnings.
+7. Do not send, upload, apply, or contact anyone.
 ```
 
 ## Daily import and scoring prompt
