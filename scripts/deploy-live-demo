@@ -171,6 +171,48 @@ if (target !== process.env.EXPECTED_TARGET || version !== process.env.EXPECTED_V
 }
 NODE
 
+if [[ "$demo_scenario" == "job-search" ]]; then
+  docker compose --env-file "$env_file" -p "$compose_project" -f "$compose_file" exec -T \
+    -e OXRM_API_URL=http://127.0.0.1:18181 \
+    -e CRM_API_URL=http://127.0.0.1:18181 \
+    api scripts/oxrm-internal cli setup:job-search --input '{
+      "sources": [
+        {
+          "title": "LinkedIn job alerts",
+          "channel": "job_board",
+          "sourceUrl": "https://www.linkedin.com/jobs/",
+          "cadence": "daily",
+          "importInstructions": "Use synthetic demo alerts only. Import role, company, source URL, raw job description, location, and received date.",
+          "privacyNotes": "Public demo data is synthetic. Do not connect real job-board credentials."
+        },
+        {
+          "title": "Target company career pages",
+          "channel": "career_page",
+          "sourceUrl": "https://example.invalid/careers",
+          "cadence": "daily",
+          "importInstructions": "Use synthetic target-company career pages. Dedupe by company, title, location, and URL.",
+          "privacyNotes": "Manual paste is acceptable; respect site terms for real private deployments."
+        }
+      ],
+      "fitRubric": {
+        "threshold": 75,
+        "mustHave": ["Role matches target function", "Location or remote constraints work", "Core skills are represented in the CV"],
+        "niceToHave": ["Warm contact exists", "Product/domain interest", "Clear hiring signal"],
+        "exclusions": ["Requires unavailable location", "Requires seniority mismatch", "Unclear or low-quality posting"]
+      },
+      "cvStrategy": {
+        "baseCvPath": ".data/files/records/job-search/cv-template-operator-engineering.md",
+        "variantPolicy": "Create local variants only for high-fit demo jobs.",
+        "editorInstructions": "Preserve factual claims. Tailor summary, relevant projects, and keywords to the job description."
+      },
+      "coverLetterStrategy": {
+        "threshold": 75,
+        "templatePath": ".data/files/records/job-search/cover-letter-template.md",
+        "editorInstructions": "Draft concise local letters with evidence from the CV and job description. Never invent experience."
+      }
+    }' >/dev/null
+fi
+
 job_applications_json="$(curl -fsS "http://127.0.0.1:${api_port}/api/views/job_search.applications/run?limit=100")"
 leads_json="$(curl -fsS "http://127.0.0.1:${api_port}/api/leads?limit=100")"
 JOB_APPLICATIONS_JSON="$job_applications_json" LEADS_JSON="$leads_json" EXPECTED_SCENARIO="$demo_scenario" node <<'NODE'
