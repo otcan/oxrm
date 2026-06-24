@@ -37,14 +37,22 @@ import { XrmRecord } from "./models";
           <label>Contact<input [(ngModel)]="form.responsiblePerson" name="applicationContact"></label>
           <label>
             CV to use
-            <select [(ngModel)]="form.cvVersion" name="applicationCv">
+            <select [(ngModel)]="form.cvRecordId" name="applicationCv">
               <option value="">No CV selected</option>
               @for (cv of cvs; track cv.id) {
-                <option [value]="cv.displayName">{{ cv.displayName }}</option>
+                <option [value]="cv.id">{{ cv.displayName }}</option>
               }
             </select>
           </label>
-          <label>Cover letter<input [(ngModel)]="form.coverLetterVersion" name="applicationCoverLetter" placeholder="Not prepared"></label>
+          <label>
+            Cover letter
+            <select [(ngModel)]="form.coverLetterRecordId" name="applicationCoverLetter">
+              <option value="">Not prepared</option>
+              @for (coverLetter of coverLetters; track coverLetter.id) {
+                <option [value]="coverLetter.id">{{ coverLetterLabel(coverLetter) }}</option>
+              }
+            </select>
+          </label>
           <label>Next action<input [(ngModel)]="form.nextAction" name="applicationNextAction"></label>
           <label>Next-action date<input [(ngModel)]="form.nextActionAt" name="applicationNextDate" type="date"></label>
         </div>
@@ -65,6 +73,7 @@ import { XrmRecord } from "./models";
 })
 export class AddApplicationModalComponent implements OnChanges {
   @Input() cvs: XrmRecord[] = [];
+  @Input() coverLetters: XrmRecord[] = [];
   @Input() prefill: Record<string, string> | null = null;
   @Output() close = new EventEmitter<void>();
   @Output() createApplication = new EventEmitter<Record<string, string>>();
@@ -73,6 +82,11 @@ export class AddApplicationModalComponent implements OnChanges {
 
   get recommendedCv() {
     return this.cvs.find((cv) => /platform|backend/i.test(cv.displayName))?.displayName ?? "";
+  }
+
+  coverLetterLabel(coverLetter: XrmRecord) {
+    const version = coverLetter.fields?.["version"];
+    return version ? `${coverLetter.displayName} — ${String(version)}` : coverLetter.displayName;
   }
 
   ngOnChanges(changes: SimpleChanges) {
@@ -98,8 +112,8 @@ export class AddApplicationModalComponent implements OnChanges {
       stage: "Saved",
       applicationDate: "",
       responsiblePerson: "",
-      cvVersion: "",
-      coverLetterVersion: "",
+      cvRecordId: "",
+      coverLetterRecordId: "",
       nextAction: "Choose CV and prepare application packet",
       nextActionAt: new Date().toISOString().slice(0, 10)
     };

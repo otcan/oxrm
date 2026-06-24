@@ -160,7 +160,9 @@ type DetailTab = "overview" | "draft" | "activity";
               <oc-job-detail
                 [record]="selection.item"
                 [workflow]="jobWorkflow(selection.item)"
+                [saving]="saving"
                 (runAction)="runJobAction.emit({ record: selection.item, action: $event })"
+                (createCoverLetterDraft)="createJobCoverLetterDraft.emit($event)"
               />
 
               <details class="advanced-detail">
@@ -175,7 +177,11 @@ type DetailTab = "overview" | "draft" | "activity";
             } @else if (isApplicationRecord(selection.item)) {
               <oc-job-application-detail
                 [record]="selection.item"
+                [saving]="saving"
                 (openCvLibrary)="openCvLibrary.emit()"
+                (openCoverLetterLibrary)="openCoverLetterLibrary.emit()"
+                (createCoverLetterDraft)="createCoverLetterDraft.emit($event)"
+                (unlinkDocument)="unlinkDocument.emit({ application: selection.item, kind: $event })"
               />
 
               <details class="advanced-detail">
@@ -226,6 +232,10 @@ export class DetailDrawerComponent {
   @Output() dismiss = new EventEmitter<XrmRecord>();
   @Output() runJobAction = new EventEmitter<{ record: XrmRecord; action: JobWorkflowActionKey }>();
   @Output() openCvLibrary = new EventEmitter<void>();
+  @Output() openCoverLetterLibrary = new EventEmitter<void>();
+  @Output() createCoverLetterDraft = new EventEmitter<XrmRecord>();
+  @Output() unlinkDocument = new EventEmitter<{ application: XrmRecord; kind: "cv" | "cover_letter" }>();
+  @Output() createJobCoverLetterDraft = new EventEmitter<XrmRecord>();
 
   @ViewChild(LeadDetailComponent) leadDetail?: LeadDetailComponent;
   @ViewChild(TaskDetailComponent) taskDetail?: TaskDetailComponent;

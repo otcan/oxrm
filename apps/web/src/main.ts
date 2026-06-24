@@ -1,47 +1,10 @@
 import { bootstrapApplication } from "@angular/platform-browser";
-import { Component } from "@angular/core";
-import { provideRouter, Routes } from "@angular/router";
+import { provideRouter } from "@angular/router";
 import { AppComponent } from "./app/app.component";
-
-@Component({
-  standalone: true,
-  template: ""
-})
-class RouteSinkComponent {}
-
-const routes: Routes = [
-  { path: "today", component: RouteSinkComponent },
-  { path: "setup", redirectTo: "setup/job-search", pathMatch: "full" },
-  { path: "setup/job-search", component: RouteSinkComponent },
-  { path: "applications", component: RouteSinkComponent },
-  { path: "jobs", component: RouteSinkComponent },
-  { path: "contacts", component: RouteSinkComponent },
-  { path: "pipeline", component: RouteSinkComponent },
-  { path: "people", component: RouteSinkComponent },
-  { path: "companies", component: RouteSinkComponent },
-  { path: "settings/advanced", component: RouteSinkComponent },
-  { path: "settings/advanced/activity", component: RouteSinkComponent },
-  { path: "start", redirectTo: "today", pathMatch: "full" },
-  { path: "dashboard", redirectTo: "today", pathMatch: "full" },
-  { path: "queue", redirectTo: "today", pathMatch: "full" },
-  { path: "workspace", redirectTo: "today", pathMatch: "full" },
-  { path: "records/application", redirectTo: "applications", pathMatch: "full" },
-  { path: "records/job", redirectTo: "jobs", pathMatch: "full" },
-  { path: "records/job_contact", redirectTo: "contacts", pathMatch: "full" },
-  { path: "records/lead", redirectTo: "pipeline", pathMatch: "full" },
-  { path: "records/person", redirectTo: "people", pathMatch: "full" },
-  { path: "records/company", redirectTo: "companies", pathMatch: "full" },
-  { path: "timeline", redirectTo: "settings/advanced/activity", pathMatch: "full" },
-  { path: "views/:viewKey", redirectTo: "settings/advanced", pathMatch: "full" },
-  { path: "records", redirectTo: "settings/advanced", pathMatch: "full" },
-  { path: "records/:objectType/:recordId", component: RouteSinkComponent },
-  { path: "settings", component: RouteSinkComponent },
-  { path: "", redirectTo: "today", pathMatch: "full" },
-  { path: "**", redirectTo: "today" }
-];
+import { appRoutes } from "./app/app.routes";
 
 bootstrapApplication(AppComponent, {
-  providers: [provideRouter(routes)]
+  providers: [provideRouter(appRoutes)]
 }).catch((error: unknown) => {
   console.error(error);
 });

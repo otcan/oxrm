@@ -33,18 +33,31 @@ type ApplicationDetailTab = "overview" | "documents" | "activity";
         <div class="document-row">
           <div>
             <span>CV</span>
-            <strong>{{ field("cvVersion", "Not selected") }}</strong>
+            <strong>{{ selectedDocumentName("application_uses_cv", "cvVersion", "Not selected") }}</strong>
           </div>
-          <button type="button" (click)="openCvLibrary.emit()">Change</button>
+          <div class="document-actions">
+            <button type="button" (click)="openCvLibrary.emit()">Change</button>
+            @if (hasSelectedDocument("application_uses_cv", "cvVersion")) {
+              <button type="button" [disabled]="saving" (click)="unlinkDocument.emit('cv')">Remove</button>
+            }
+          </div>
         </div>
-        <div class="document-row">
+        <div class="document-row application-cover-letter-row">
           <div>
             <span>Cover letter</span>
-            <strong>{{ field("coverLetterVersion", "Not prepared") }}</strong>
+            <strong>{{ selectedDocumentName("application_uses_cover_letter", "coverLetterVersion", "Not prepared") }}</strong>
           </div>
-          <button type="button">Create draft</button>
+          <div class="document-actions">
+            <button type="button" (click)="openCoverLetterLibrary.emit()">Change</button>
+            <button type="button" [disabled]="saving" (click)="createCoverLetterDraft.emit(record)">
+              {{ saving ? "Creating…" : "Create draft" }}
+            </button>
+            @if (hasSelectedDocument("application_uses_cover_letter", "coverLetterVersion")) {
+              <button type="button" [disabled]="saving" (click)="unlinkDocument.emit('cover_letter')">Remove</button>
+            }
+          </div>
         </div>
-        @if (field("cvVersion", "") === "") {
+        @if (!hasSelectedDocument("application_uses_cv", "cvVersion")) {
           <p class="detail-note warn">No CV is linked to this application. Choose a CV before applying, or continue only after reviewing the risk.</p>
         }
       </section>
@@ -60,7 +73,11 @@ type ApplicationDetailTab = "overview" | "documents" | "activity";
 })
 export class JobApplicationDetailComponent {
   @Input({ required: true }) record!: XrmRecord;
+  @Input() saving = false;
   @Output() openCvLibrary = new EventEmitter<void>();
+  @Output() openCoverLetterLibrary = new EventEmitter<void>();
+  @Output() createCoverLetterDraft = new EventEmitter<XrmRecord>();
+  @Output() unlinkDocument = new EventEmitter<"cv" | "cover_letter">();
 
   tab: ApplicationDetailTab = "overview";
 
@@ -79,5 +96,18 @@ export class JobApplicationDetailComponent {
 
   human(value: unknown) {
     return String(value ?? "-").replace(/[_.-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+  }
+
+  selectedDocumentName(relationshipType: string, cacheField: string, fallback: string) {
+    const relationships = (this.record.sourceRelationships ?? []).filter(
+      (relationship) => relationship.relationshipType?.key === relationshipType && relationship.metadata?.["selected"] !== false
+    );
+    const selected = relationships.find((relationship) => relationship.metadata?.["selected"] === true)
+      ?? (relationships.length === 1 ? relationships[0] : undefined);
+    return selected?.targetRecord?.displayName ?? this.field(cacheField, fallback);
+  }
+
+  hasSelectedDocument(relationshipType: string, cacheField: string) {
+    return this.selectedDocumentName(relationshipType, cacheField, "") !== "";
   }
 }

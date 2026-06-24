@@ -8,13 +8,17 @@ import { AddJobModalComponent } from "./add-job-modal.component";
 import { AppShellComponent } from "./app-shell.component";
 import { CrmApiService } from "./crm-api.service";
 import { ConnectAiModalComponent } from "./connect-ai-modal.component";
+import { CoverLetterLibraryModalComponent } from "./cover-letter-library-modal.component";
 import { CvLibraryModalComponent } from "./cv-library-modal.component";
 import { DemoWelcomePageComponent } from "./demo-welcome-page.component";
 import { DetailDrawerComponent } from "./detail-drawer.component";
 import { GuidedTourComponent } from "./guided-tour.component";
 import { JobApplicationsPageComponent } from "./job-applications-page.component";
 import { JobContactRow, JobContactsPageComponent } from "./job-contacts-page.component";
+import type { CoverLetterDraftRequest, DocumentSaveRequest } from "./job-documents-page.component";
+import { JobDocumentsHostComponent } from "./job-documents-host.component";
 import { JobJobsPageComponent } from "./job-jobs-page.component";
+import { nextJobCoverLetterDraft } from "./job-document-utils";
 import { JobSearchSetupPageComponent } from "./job-search-setup-page.component";
 import { OutreachCompaniesPageComponent } from "./outreach-companies-page.component";
 import { OutreachPeoplePageComponent } from "./outreach-people-page.component";
@@ -58,6 +62,7 @@ const JOB_NAV: NavDefinition[] = [
   { label: "Setup", path: "/setup/job-search" },
   { label: "Applications", path: "/applications" },
   { label: "Jobs", path: "/jobs" },
+  { label: "Documents", path: "/documents" },
   { label: "Contacts", path: "/contacts" }
 ];
 
@@ -78,12 +83,14 @@ const OUTREACH_NAV: NavDefinition[] = [
     AddJobModalComponent,
     AppShellComponent,
     ConnectAiModalComponent,
+    CoverLetterLibraryModalComponent,
     CvLibraryModalComponent,
     DemoWelcomePageComponent,
     DetailDrawerComponent,
     GuidedTourComponent,
     JobApplicationsPageComponent,
     JobContactsPageComponent,
+    JobDocumentsHostComponent,
     JobJobsPageComponent,
     JobSearchSetupPageComponent,
     OutreachCompaniesPageComponent,
@@ -114,6 +121,15 @@ export class AppComponent {
   readonly jobSearchSetup = signal<JobSearchSetupSummary | null>(null);
   readonly jobContacts = signal<XrmRecord[]>([]);
   readonly cvRecords = signal<XrmRecord[]>([]);
+  readonly coverLetterRecords = signal<XrmRecord[]>([]);
+  readonly savedDocumentId = signal("");
+  readonly coverLetterDraftRequest = signal<CoverLetterDraftRequest | null>(null);
+  readonly coverLetterDrafts = computed(() =>
+    this.coverLetterRecords().filter((record) => {
+      const version = String(record.fields?.["version"] ?? "");
+      return record.metadata?.["draftOnly"] === true || /draft/i.test(`${record.displayName} ${version}`);
+    })
+  );
   readonly outreachLeadRecords = signal<XrmRecord[]>([]);
   readonly outreachPeopleRecords = signal<XrmRecord[]>([]);
   readonly outreachCompanyRecords = signal<XrmRecord[]>([]);
@@ -127,6 +143,7 @@ export class AppComponent {
   readonly addApplicationOpen = signal(false);
   readonly addJobOpen = signal(false);
   readonly cvLibraryOpen = signal(false);
+  readonly coverLetterLibraryOpen = signal(false);
   readonly connectAiOpen = signal(false);
   readonly demoWelcomeOpen = signal(false);
   readonly guidedTourOpen = signal(false);
@@ -204,11 +221,12 @@ export class AppComponent {
         activity: "Communication"
       },
       stages: ["Saved", "Preparing", "Applied", "Interviewing", "Not a fit", "Closed"],
-        routes: {
-          Today: "/today",
-          Setup: "/setup/job-search",
-          Applications: "/applications",
-          Jobs: "/jobs",
+      routes: {
+        Today: "/today",
+        Applications: "/applications",
+        Jobs: "/jobs",
+        Documents: "/documents",
+        Setup: "/setup/job-search",
         Contacts: "/contacts",
         Settings: "/settings",
         Advanced: "/settings/advanced"
@@ -222,6 +240,10 @@ export class AppComponent {
   readonly selectedRecordId = computed(() => {
     const selected = this.selectedDetail();
     return selected?.kind === "record" ? selected.item.id : "";
+  });
+  readonly cvLibraryTargetApplication = computed(() => {
+    const selected = this.selectedDetail();
+    return selected?.kind === "record" && selected.item.objectType?.slug === "application" ? selected.item : null;
   });
 
   readonly visibleQueue = computed(() =>
@@ -968,6 +990,8 @@ export class AppComponent {
         return "Track each application by stage, contact, fit, and next action.";
       case "Jobs":
         return "Review saved roles and decide which opportunities are worth applying to.";
+      case "Documents":
+        return "Create and maintain reusable CV versions and cover letter drafts.";
       case "Contacts":
         return "Recruiters, hiring managers, and warm contacts linked to applications.";
       case "Pipeline":
@@ -1021,6 +1045,7 @@ export class AppComponent {
       jobSearchSetup,
       jobContacts,
       cvRecords,
+      coverLetterRecords,
       outreachLeads,
       outreachPeople,
       outreachCompanies
@@ -1037,6 +1062,7 @@ export class AppComponent {
       templateKey === "job_search" ? this.api.getJobSearchSetup().catch(() => null) : Promise.resolve(null),
       templateKey === "job_search" ? this.api.listXrmRecords({ objectType: "job_contact", limit: 100 }).catch(() => []) : Promise.resolve([]),
       templateKey === "job_search" ? this.api.listXrmRecords({ objectType: "cv_version", limit: 100 }).catch(() => []) : Promise.resolve([]),
+      templateKey === "job_search" ? this.api.listXrmRecords({ objectType: "cover_letter", limit: 100 }).catch(() => []) : Promise.resolve([]),
       this.api.listXrmRecords({ objectType: "lead", limit: 100 }).catch(() => []),
       this.api.listXrmRecords({ objectType: "person", limit: 100 }).catch(() => []),
       this.api.listXrmRecords({ objectType: "company", limit: 100 }).catch(() => [])
@@ -1054,6 +1080,7 @@ export class AppComponent {
     this.jobSearchSetup.set(jobSearchSetup);
     this.jobContacts.set(jobContacts);
     this.cvRecords.set(cvRecords.filter((record) => this.recordBelongsToMode(record, "job_search")));
+    this.coverLetterRecords.set(coverLetterRecords.filter((record) => this.recordBelongsToMode(record, "job_search")));
     this.outreachLeadRecords.set(outreachLeads.filter((record) => this.recordBelongsToMode(record, "outreach")));
     this.outreachPeopleRecords.set(outreachPeople.filter((record) => this.recordBelongsToMode(record, "outreach")));
     this.outreachCompanyRecords.set(outreachCompanies.filter((record) => this.recordBelongsToMode(record, "outreach")));
@@ -1194,6 +1221,140 @@ export class AppComponent {
       await this.selectRecordById(updated.id, false);
     } catch (error) {
       this.saveError.set(error instanceof Error ? error.message : "Could not save record.");
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  createCoverLetterDraft(application: XrmRecord) {
+    const role = this.recordField(application, "role", application.displayName);
+    const company = this.recordField(application, "company", "Company");
+    const selectedCv = (application.sourceRelationships ?? []).find(
+      (relationship) => relationship.relationshipType?.key === "application_uses_cv" && relationship.metadata?.["selected"] !== false
+    )?.targetRecord;
+    const linkedJob = (application.sourceRelationships ?? []).find(
+      (relationship) => relationship.relationshipType?.key === "application_targets_job"
+    )?.targetRecord;
+    const linkedFit = (application.sourceRelationships ?? []).find(
+      (relationship) => relationship.relationshipType?.key === "application_has_fit"
+    )?.targetRecord;
+    const roleContext = String(
+      linkedFit?.fields?.["matchingSkills"]
+        ?? linkedJob?.fields?.["requirements"]
+        ?? linkedJob?.fields?.["description"]
+        ?? application.fields?.["jobDescription"]
+        ?? "the role requirements"
+    );
+    const contextSnippet = roleContext.length > 360 ? `${roleContext.slice(0, 357).trim()}…` : roleContext;
+    const cvContext = selectedCv
+      ? `Use the linked CV “${selectedCv.displayName}” as the only source for experience claims.`
+      : "Choose a CV before finalizing this draft, and use it as the only source for experience claims.";
+    this.coverLetterDraftRequest.set({
+      key: `${application.id}:${Date.now()}`,
+      applicationId: application.id,
+      title: `Cover Letter - ${company} Draft`,
+      version: "v1-draft",
+      company,
+      derivedFor: `${role} at ${company}`,
+      summary: `Contextual draft for ${role} at ${company}, based on the linked job, fit evidence, and selected CV.`,
+      body: `Dear ${company} hiring team,\n\nI am applying for the ${role} role. The saved role context emphasizes ${contextSnippet}.\n\n[Add one concise example verified against ${selectedCv?.displayName ?? "the CV you select"}.]\n\nI would welcome the opportunity to discuss how this verified experience can contribute to ${company}.\n\nBest,\n[Your name]`,
+      editorInstructions: `Draft only. ${cvContext} Verify every claim against the saved job and CV, replace bracketed guidance, and require human review before external use.`
+    });
+    this.selectedDetail.set(null);
+    this.detailError.set(null);
+    this.saveError.set(null);
+    this.selectNav("Documents");
+  }
+
+  async createJobCoverLetterDraft(job: XrmRecord) {
+    const role = this.recordField(job, "title", job.displayName);
+    const company = this.recordField(job, "company", "Company");
+    const draftIdentity = nextJobCoverLetterDraft(this.coverLetterRecords(), job.id);
+    const draftNumber = draftIdentity.number;
+    const draftVersion = draftIdentity.version;
+    const fitContext = this.recordField(
+      job,
+      "matchingSkills",
+      this.recordField(job, "requirements", this.recordField(job, "description", "the role requirements"))
+    );
+    const contextSnippet = fitContext.length > 320 ? `${fitContext.slice(0, 317).trim()}…` : fitContext;
+
+    this.saving.set(true);
+    this.saveError.set(null);
+    try {
+      const workflow = await this.api.getJobWorkflow(job.id).catch(() => null);
+      const application = workflow?.linkedApplication;
+      const selectedCv = (application?.sourceRelationships ?? []).find(
+        (relationship) => relationship.relationshipType?.key === "application_uses_cv" && relationship.metadata?.["selected"] !== false
+      )?.targetRecord;
+      const cvInstruction = selectedCv
+        ? `Use “${selectedCv.displayName}” as the only source for experience claims.`
+        : "No CV is linked yet. Choose one before finalizing and use it as the only source for experience claims.";
+      const draft = await this.api.createXrmRecord({
+        objectType: "cover_letter",
+        externalKey: draftIdentity.externalKey,
+        displayName: `Cover Letter - ${company} ${role} Draft v${draftNumber}`,
+        fields: {
+          title: `Cover Letter - ${company} ${role} Draft v${draftNumber}`,
+          version: draftVersion,
+          company,
+          derivedFor: `${role} at ${company}`,
+          summary: `Draft generated from the saved ${role} posting, fit context, and ${selectedCv?.displayName ?? "a CV to be selected"}.`,
+          body: `Dear ${company} hiring team,\n\nI am applying for the ${role} position. The saved role context emphasizes ${contextSnippet}.\n\n[Add one concise example verified against ${selectedCv?.displayName ?? "the selected CV"}.]\n\nI would welcome the opportunity to discuss how this verified experience could contribute to ${company}.\n\nBest,\n[Your name]`,
+          editorInstructions: `Generated from local job-search records. ${cvInstruction} Replace bracketed guidance, verify every claim, and require human review before external use.`,
+          jobId: job.id,
+          jobUrl: this.recordField(job, "url", "")
+        },
+        source: "web",
+        metadata: { templateKey: "job_search", source: "job_description", draftOnly: true, jobId: job.id }
+      });
+
+      if (application) {
+        await this.selectApplicationDocument(application, draft, "application_uses_cover_letter", "coverLetterVersion", {
+          draftOnly: true,
+          jobId: job.id
+        });
+      }
+
+      const coverLetterType = this.objectTypes().find((type) => type.slug === "cover_letter") ?? null;
+      this.coverLetterRecords.update((records) => [{ ...draft, objectType: coverLetterType }, ...records]);
+      this.selectedDetail.set(null);
+      this.savedDocumentId.set(draft.id);
+      this.selectNav("Documents");
+    } catch (error) {
+      this.saveError.set(error instanceof Error ? error.message : "Could not create cover-letter draft from this job.");
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  async saveDocumentFromLibrary(request: DocumentSaveRequest) {
+    const { input, applicationId } = request;
+    this.saving.set(true);
+    this.saveError.set(null);
+    try {
+      const saved = input.recordId
+        ? await this.api.updateXrmRecord(input)
+        : await this.api.createXrmRecord(input);
+      if (applicationId && input.objectType === "cover_letter") {
+        const application = await this.api.getXrmRecord(applicationId);
+        await this.selectApplicationDocument(application, saved, "application_uses_cover_letter", "coverLetterVersion", {
+          draftOnly: true
+        });
+      }
+      const records = input.objectType === "cv_version" ? this.cvRecords() : this.coverLetterRecords();
+      const existing = records.find((record) => record.id === saved.id);
+      const objectType = existing?.objectType ?? this.objectTypes().find((type) => type.slug === input.objectType) ?? null;
+      const hydrated = { ...saved, objectType };
+      const nextRecords = existing
+        ? records.map((record) => (record.id === hydrated.id ? hydrated : record))
+        : [hydrated, ...records];
+      if (input.objectType === "cv_version") this.cvRecords.set(nextRecords);
+      else this.coverLetterRecords.set(nextRecords);
+      this.savedDocumentId.set(saved.id);
+      this.coverLetterDraftRequest.set(null);
+    } catch (error) {
+      this.saveError.set(error instanceof Error ? error.message : "Could not save document.");
     } finally {
       this.saving.set(false);
     }
@@ -1509,9 +1670,167 @@ export class AppComponent {
     this.cvLibraryOpen.set(false);
   }
 
+  openCoverLetterLibrary() {
+    this.saveError.set(null);
+    this.coverLetterLibraryOpen.set(true);
+  }
+
+  closeCoverLetterLibrary() {
+    this.coverLetterLibraryOpen.set(false);
+  }
+
   async openCvRecord(record: XrmRecord) {
     this.closeCvLibrary();
     await this.selectRecordById(record.id);
+  }
+
+  async chooseCvForApplication(cv: XrmRecord) {
+    const application = this.cvLibraryTargetApplication();
+    if (!application) return;
+
+    this.saving.set(true);
+    this.saveError.set(null);
+    try {
+      await this.selectApplicationDocument(application, cv, "application_uses_cv", "cvVersion", {
+        selectedFrom: "cv_library"
+      });
+      this.closeCvLibrary();
+    } catch (error) {
+      this.saveError.set(error instanceof Error ? error.message : "Could not choose this CV.");
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  async openCoverLetterRecord(record: XrmRecord) {
+    this.closeCoverLetterLibrary();
+    this.savedDocumentId.set(record.id);
+    this.selectedDetail.set(null);
+    this.selectNav("Documents");
+  }
+
+  async openApplicationFromDocuments(applicationId: string) {
+    this.selectNav("Applications");
+    await this.selectRecordById(applicationId, false);
+  }
+
+  async chooseCoverLetterForApplication(coverLetter: XrmRecord) {
+    const application = this.cvLibraryTargetApplication();
+    if (!application) return;
+
+    this.saving.set(true);
+    this.saveError.set(null);
+    try {
+      await this.selectApplicationDocument(
+        application,
+        coverLetter,
+        "application_uses_cover_letter",
+        "coverLetterVersion",
+        { selectedFrom: "cover_letter_library", draftOnly: true }
+      );
+      this.closeCoverLetterLibrary();
+    } catch (error) {
+      this.saveError.set(error instanceof Error ? error.message : "Could not choose this cover letter.");
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  async unlinkApplicationDocument(event: { application: XrmRecord; kind: "cv" | "cover_letter" }) {
+    this.saving.set(true);
+    this.saveError.set(null);
+    try {
+      const updated = await this.api.selectApplicationDocument({
+        applicationId: event.application.id,
+        kind: event.kind,
+        documentId: null,
+        source: "web",
+        metadata: { removedFrom: "application_detail" }
+      });
+      this.applyRecordUpdate(updated);
+    } catch (error) {
+      this.saveError.set(error instanceof Error ? error.message : "Could not remove this document.");
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  async duplicateDocument(record: XrmRecord) {
+    const objectType = record.objectType?.slug;
+    if (objectType !== "cv_version" && objectType !== "cover_letter") return;
+    this.saving.set(true);
+    this.saveError.set(null);
+    try {
+      const duplicate = await this.api.createXrmRecord({
+        objectType,
+        displayName: `${record.displayName} Copy`,
+        fields: {
+          ...record.fields,
+          title: `${this.recordField(record, "title", record.displayName)} Copy`,
+          version: `${this.recordField(record, "version", "v1")}-copy`
+        },
+        status: "active",
+        source: "web",
+        metadata: { ...(record.metadata ?? {}), default: false, duplicatedFrom: record.id }
+      });
+      const hydrated = { ...duplicate, objectType: record.objectType ?? null };
+      if (objectType === "cv_version") this.cvRecords.update((records) => [hydrated, ...records]);
+      else this.coverLetterRecords.update((records) => [hydrated, ...records]);
+    } catch (error) {
+      this.saveError.set(error instanceof Error ? error.message : "Could not duplicate this document.");
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  async setDefaultCv(cv: XrmRecord) {
+    this.saving.set(true);
+    this.saveError.set(null);
+    try {
+      const updatedRecords = await Promise.all(
+        this.cvRecords().map(async (record) => {
+          const shouldBeDefault = record.id === cv.id;
+          if ((record.metadata?.["default"] === true) === shouldBeDefault) return record;
+          const updated = await this.api.updateXrmRecord({
+            objectType: "cv_version",
+            recordId: record.id,
+            displayName: record.displayName,
+            ...(record.externalKey ? { externalKey: record.externalKey } : {}),
+            fields: record.fields,
+            status: record.status,
+            source: record.source ?? "web",
+            metadata: { ...(record.metadata ?? {}), default: shouldBeDefault }
+          });
+          return { ...updated, objectType: record.objectType ?? null };
+        })
+      );
+      this.cvRecords.set(updatedRecords);
+    } catch (error) {
+      this.saveError.set(error instanceof Error ? error.message : "Could not set the default CV.");
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  async archiveDocument(record: XrmRecord) {
+    const cacheField = record.objectType?.slug === "cv_version" ? "cvVersion" : "coverLetterVersion";
+    const usageCount = this.jobApplicationRows().filter((application) => application[cacheField] === record.displayName).length;
+    if (usageCount > 0) {
+      this.saveError.set(`This document is used by ${usageCount} application${usageCount === 1 ? "" : "s"}. Unlink it before archiving.`);
+      return;
+    }
+    if (typeof window !== "undefined" && !window.confirm(`Archive ${record.displayName}?`)) return;
+    this.saving.set(true);
+    this.saveError.set(null);
+    try {
+      await this.api.deleteXrmRecord(record.id);
+      if (record.objectType?.slug === "cv_version") this.cvRecords.update((records) => records.filter((item) => item.id !== record.id));
+      else this.coverLetterRecords.update((records) => records.filter((item) => item.id !== record.id));
+    } catch (error) {
+      this.saveError.set(error instanceof Error ? error.message : "Could not archive this document.");
+    } finally {
+      this.saving.set(false);
+    }
   }
 
   openConnectAi() {
@@ -1577,9 +1896,35 @@ export class AppComponent {
   }
 
   async createApplicationRecord(fields: Record<string, string>) {
-    const normalized = this.normalizeDateFields(fields, ["applicationDate", "nextActionAt"]);
+    const { cvRecordId = "", coverLetterRecordId = "", ...applicationFields } = fields;
+    const cv = this.cvRecords().find((record) => record.id === cvRecordId);
+    const coverLetter = this.coverLetterRecords().find((record) => record.id === coverLetterRecordId);
+    const normalized = this.normalizeDateFields(
+      {
+        ...applicationFields,
+        cvVersion: cv?.displayName ?? "",
+        coverLetterVersion: coverLetter?.displayName ?? ""
+      },
+      ["applicationDate", "nextActionAt"]
+    );
     const displayName = `${normalized["role"] || "Application"} at ${normalized["company"] || "Company"}`;
-    await this.createSpecializedRecord("application", displayName, normalized);
+    let application = await this.createSpecializedRecord("application", displayName, normalized);
+    if (cv) {
+      application = await this.selectApplicationDocument(application, cv, "application_uses_cv", "cvVersion", {
+        selectedFrom: "application_form"
+      });
+    }
+    if (coverLetter) {
+      application = await this.selectApplicationDocument(
+        application,
+        coverLetter,
+        "application_uses_cover_letter",
+        "coverLetterVersion",
+        { selectedFrom: "application_form", draftOnly: true }
+      );
+    }
+    await this.refresh();
+    await this.selectRecordById(application.id, false);
     this.closeAddApplication();
   }
 
@@ -1824,6 +2169,47 @@ export class AppComponent {
     });
   }
 
+  private async selectApplicationDocument(
+    application: XrmRecord,
+    document: XrmRecord,
+    relationshipType: "application_uses_cv" | "application_uses_cover_letter",
+    _cacheField: "cvVersion" | "coverLetterVersion",
+    metadata: Record<string, unknown> = {}
+  ) {
+    const updated = await this.api.selectApplicationDocument({
+      applicationId: application.id,
+      kind: relationshipType === "application_uses_cv" ? "cv" : "cover_letter",
+      documentId: document.id,
+      source: "web",
+      metadata
+    });
+    this.applyRecordUpdate(updated);
+    return updated;
+  }
+
+  private applyRecordUpdate(record: XrmRecord) {
+    const replace = (records: XrmRecord[]) => records.map((candidate) => (candidate.id === record.id ? record : candidate));
+    if (record.objectType?.slug === "cv_version") this.cvRecords.update(replace);
+    if (record.objectType?.slug === "cover_letter") this.coverLetterRecords.update(replace);
+    if (record.objectType?.slug === "job_contact") this.jobContacts.update(replace);
+    if (record.objectType?.slug === "application") {
+      this.jobApplications.update((result) =>
+        result
+          ? {
+              ...result,
+              rows: result.rows.map((row) =>
+                row["id"] === record.id ? { ...row, ...record.fields, displayName: record.displayName, status: record.status } : row
+              )
+            }
+          : result
+      );
+    }
+    const selected = this.selectedDetail();
+    if (selected?.kind === "record" && selected.item.id === record.id) {
+      this.selectedDetail.set({ kind: "record", item: record });
+    }
+  }
+
   private async updateRecordFields(record: XrmRecord, fields: Record<string, unknown>) {
     this.saving.set(true);
     this.saveError.set(null);
@@ -1860,6 +2246,7 @@ export class AppComponent {
       });
       await this.refresh();
       await this.selectRecordById(created.id);
+      return created;
     } catch (error) {
       this.saveError.set(error instanceof Error ? error.message : "Could not create record.");
       throw error;
@@ -2132,6 +2519,8 @@ export class AppComponent {
                 ? "/jobs"
                 : slug === "job_contact"
                   ? "/contacts"
+                  : slug === "cv_version" || slug === "cover_letter"
+                    ? "/documents"
                   : "/settings/advanced";
     return `${path}?record=${encodeURIComponent(record.id)}`;
   }
@@ -2233,6 +2622,7 @@ export class AppComponent {
     if (path.startsWith("/setup")) return "Setup";
     if (path.startsWith("/applications") || path === "/records/application") return "Applications";
     if (path.startsWith("/jobs") || path === "/records/job") return "Jobs";
+    if (path.startsWith("/documents") || path === "/records/cv_version" || path === "/records/cover_letter") return "Documents";
     if (path.startsWith("/contacts") || path === "/records/job_contact") return "Contacts";
     if (path.startsWith("/settings/advanced") || path.startsWith("/views") || path.startsWith("/records") || path.startsWith("/timeline")) return "Advanced";
     if (path.startsWith("/settings")) return "Settings";

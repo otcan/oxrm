@@ -57,6 +57,11 @@ type JobDetailTab = "overview" | "description" | "match" | "activity";
             <p>{{ field("responsibilities") }}</p>
           }
         </article>
+        <div class="detail-actions">
+          <button type="button" class="primary" [disabled]="saving" (click)="createCoverLetterDraft.emit(record)">
+            {{ saving ? "Creating draft…" : "Create cover letter draft" }}
+          </button>
+        </div>
       </section>
     }
 
@@ -83,7 +88,9 @@ type JobDetailTab = "overview" | "description" | "match" | "activity";
 export class JobDetailComponent {
   @Input({ required: true }) record!: XrmRecord;
   @Input() workflow: JobWorkflowState | null = null;
+  @Input() saving = false;
   @Output() runAction = new EventEmitter<JobWorkflowActionKey>();
+  @Output() createCoverLetterDraft = new EventEmitter<XrmRecord>();
 
   tab: JobDetailTab = "overview";
 
