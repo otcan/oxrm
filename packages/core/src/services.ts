@@ -39,6 +39,7 @@ import {
   allowedJobActions,
   isJobWorkflowActionAllowed,
   runJobWorkflowActionSchema,
+  selectApplicationDocumentSchema,
   OXRM_PRODUCT_NAME,
   OXRM_PRODUCT_SLUG,
   OXRM_PRODUCT_VERSION,
@@ -1797,8 +1798,14 @@ export function createCrmServices({ db, backupsRequired = false }: ServiceContex
         where: eq(xrmRecords.id, id),
         with: {
           objectType: { with: { fields: true, fieldMappings: { with: { semanticField: true } } } },
-          sourceRelationships: { with: { relationshipType: true, targetRecord: { with: { objectType: true } } } },
-          targetRelationships: { with: { relationshipType: true, sourceRecord: { with: { objectType: true } } } },
+          sourceRelationships: {
+            where: isNull(xrmRecordRelationships.deletedAt),
+            with: { relationshipType: true, targetRecord: { with: { objectType: true } } }
+          },
+          targetRelationships: {
+            where: isNull(xrmRecordRelationships.deletedAt),
+            with: { relationshipType: true, sourceRecord: { with: { objectType: true } } }
+          },
           files: true,
           tasks: true,
           activities: true
@@ -1841,10 +1848,18 @@ export function createCrmServices({ db, backupsRequired = false }: ServiceContex
       const jobSearchOnly = (record: { externalKey?: string | null; metadata?: unknown }) =>
         record.externalKey?.startsWith("job-search:") || jsonObject(record.metadata)["templateKey"] === "job_search";
       const setupFirst = (record: { externalKey?: string | null }) => (record.externalKey?.startsWith("job-search:setup:") ? 0 : 1);
-      const jobPlaybooks = playbooks.filter(jobSearchOnly).sort((left, right) => setupFirst(left) - setupFirst(right));
-      const jobSources = sources.filter(jobSearchOnly).sort((left, right) => setupFirst(left) - setupFirst(right));
-      const jobTimers = timers.filter(jobSearchOnly).sort((left, right) => setupFirst(left) - setupFirst(right));
-      const jobBlueprints = blueprints.filter(jobSearchOnly).sort((left, right) => setupFirst(left) - setupFirst(right));
+      const stableSetupSort = (left: { externalKey?: string | null; displayName?: string | null }, right: { externalKey?: string | null; displayName?: string | null }) =>
+        setupFirst(left) - setupFirst(right) ||
+        (left.displayName ?? "").localeCompare(right.displayName ?? "") ||
+        (left.externalKey ?? "").localeCompare(right.externalKey ?? "");
+      const preferSetupRecords = <RecordT extends { externalKey?: string | null }>(records: RecordT[], prefix: string) => {
+        const setupRecords = records.filter((record) => record.externalKey?.startsWith(prefix));
+        return setupRecords.length > 0 ? setupRecords : records;
+      };
+      const jobPlaybooks = playbooks.filter(jobSearchOnly).sort(stableSetupSort);
+      const jobSources = preferSetupRecords(sources.filter(jobSearchOnly), "job-search:setup:source:").sort(stableSetupSort);
+      const jobTimers = preferSetupRecords(timers.filter(jobSearchOnly), "job-search:setup:timer:").sort(stableSetupSort);
+      const jobBlueprints = preferSetupRecords(blueprints.filter(jobSearchOnly), "job-search:setup:blueprint:").sort(stableSetupSort);
       const playbook =
         jobPlaybooks.find((record) => record.externalKey === "job-search:playbook:generated") ??
         jobPlaybooks.find((record) => record.externalKey === "job-search:playbook:start") ??
@@ -1970,17 +1985,40 @@ export function createCrmServices({ db, backupsRequired = false }: ServiceContex
       const parsed = parsedInput.sources.length > 0 ? parsedInput : defaultJobSearchSetup();
       const playbookBody = buildJobSearchSetupPlaybook(parsed);
       const agentPrompt = buildJobSearchAgentPrompt(parsed);
+      const sourceSlugCounts = new Map<string, number>();
+      const sourceDefinitions = parsed.sources.map((source) => {
+        const baseSlug = slugPart(source.title);
+        const occurrence = (sourceSlugCounts.get(baseSlug) ?? 0) + 1;
+        sourceSlugCounts.set(baseSlug, occurrence);
+        const uniqueSlug = occurrence === 1 ? baseSlug : `${baseSlug}-${occurrence}`;
+        return {
+          ...source,
+          externalKey: `job-search:setup:source:${uniqueSlug}`
+        };
+      });
       const metadata = {
         templateKey: "job_search",
         source: "job-search-setup",
         generatedAt: new Date().toISOString()
       };
+      const setupExternalKeys = {
+        sources: new Set(sourceDefinitions.map((source) => source.externalKey)),
+        blueprints: new Set([
+          "job-search:setup:blueprint:import-jobs",
+          "job-search:setup:blueprint:fit-rubric",
+          "job-search:setup:blueprint:cv-editor",
+          "job-search:setup:blueprint:cover-letter",
+          "job-search:setup:blueprint:follow-up"
+        ]),
+        timers: new Set(["job-search:setup:timer:import-fit", "job-search:setup:timer:review-drafts"]),
+        playbooks: new Set(["job-search:playbook:generated"])
+      };
 
       await Promise.all(
-        parsed.sources.map((source) =>
+        sourceDefinitions.map((source) =>
           this.upsertXrmRecord({
             objectType: "source_config",
-            externalKey: `job-search:setup:source:${slugPart(source.title)}`,
+            externalKey: source.externalKey,
             displayName: source.title,
             fields: {
               title: source.title,
@@ -2167,6 +2205,22 @@ export function createCrmServices({ db, backupsRequired = false }: ServiceContex
         metadata
       });
 
+      const pruneSetupRecords = async (objectType: string, prefix: string, activeKeys: Set<string>) => {
+        const existing = await this.searchXrmRecords({ objectType, limit: 500 });
+        await Promise.all(
+          existing
+            .filter((record) => record.externalKey?.startsWith(prefix) && !activeKeys.has(record.externalKey))
+            .map((record) => this.deleteXrmRecord(record.id))
+        );
+      };
+
+      await Promise.all([
+        pruneSetupRecords("source_config", "job-search:setup:source:", setupExternalKeys.sources),
+        pruneSetupRecords("action_blueprint", "job-search:setup:blueprint:", setupExternalKeys.blueprints),
+        pruneSetupRecords("automation_timer", "job-search:setup:timer:", setupExternalKeys.timers),
+        pruneSetupRecords("operator_playbook", "job-search:playbook:", setupExternalKeys.playbooks)
+      ]);
+
       const setup = await this.getJobSearchSetup();
       await this.syncJobSearchSetupTodos(setup.todos);
       return this.getJobSearchSetup();
@@ -2253,6 +2307,94 @@ export function createCrmServices({ db, backupsRequired = false }: ServiceContex
         })
         .returning();
       return relationship;
+    },
+
+    async selectApplicationDocument(input: unknown) {
+      const parsed = selectApplicationDocumentSchema.parse(input);
+      const config =
+        parsed.kind === "cv"
+          ? { relationshipType: "application_uses_cv", objectType: "cv_version", cacheField: "cvVersion" }
+          : { relationshipType: "application_uses_cover_letter", objectType: "cover_letter", cacheField: "coverLetterVersion" };
+
+      await db.transaction(async (tx) => {
+        const application = await tx.query.xrmRecords.findFirst({
+          where: eq(xrmRecords.id, parsed.applicationId),
+          with: { objectType: true }
+        });
+        if (!application || application.objectType?.slug !== "application") {
+          throw serviceError("application_not_found", 404);
+        }
+
+        const relationshipType = await tx.query.xrmRelationshipTypes.findFirst({
+          where: eq(xrmRelationshipTypes.key, config.relationshipType)
+        });
+        if (!relationshipType) {
+          throw serviceError(`xrm_relationship_type_not_found:${config.relationshipType}`, 404, "xrm_relationship_type_not_found");
+        }
+
+        const document = parsed.documentId
+          ? await tx.query.xrmRecords.findFirst({
+              where: eq(xrmRecords.id, parsed.documentId),
+              with: { objectType: true }
+            })
+          : null;
+        if (parsed.documentId && (!document || document.objectType?.slug !== config.objectType)) {
+          throw serviceError("application_document_not_found", 404);
+        }
+
+        const now = new Date();
+        await tx
+          .update(xrmRecordRelationships)
+          .set({ deletedAt: now, updatedAt: now })
+          .where(
+            and(
+              eq(xrmRecordRelationships.relationshipTypeId, relationshipType.id),
+              eq(xrmRecordRelationships.sourceRecordId, application.id),
+              isNull(xrmRecordRelationships.deletedAt)
+            )
+          );
+
+        if (document) {
+          await tx
+            .insert(xrmRecordRelationships)
+            .values({
+              relationshipTypeId: relationshipType.id,
+              sourceRecordId: application.id,
+              targetRecordId: document.id,
+              metadata: { ...(parsed.metadata ?? {}), selected: true },
+              source: parsed.source
+            })
+            .onConflictDoUpdate({
+              target: [
+                xrmRecordRelationships.relationshipTypeId,
+                xrmRecordRelationships.sourceRecordId,
+                xrmRecordRelationships.targetRecordId
+              ],
+              set: {
+                metadata: { ...(parsed.metadata ?? {}), selected: true },
+                source: parsed.source,
+                deletedAt: null,
+                updatedAt: now
+              }
+            });
+        }
+
+        const fields = { ...xrmFields(application), [config.cacheField]: document?.displayName ?? "" };
+        await tx
+          .update(xrmRecords)
+          .set({
+            fields,
+            searchText: buildXrmSearchText({
+              displayName: application.displayName,
+              fields,
+              externalKey: application.externalKey ?? undefined
+            }),
+            updatedAt: now
+          })
+          .where(eq(xrmRecords.id, application.id));
+      });
+
+      return this.getXrmRecord(parsed.applicationId);
     },
 
     async listXrmRelationships(input: unknown = {}) {

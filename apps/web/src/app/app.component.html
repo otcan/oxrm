@@ -64,6 +64,7 @@
       @case ("Setup") {
         <oc-job-search-setup-page
           [summary]="jobSearchSetup()"
+          [loading]="refreshing()"
           [saving]="saving()"
           [error]="saveError()"
           (saveSetup)="saveJobSearchSetup($event)"

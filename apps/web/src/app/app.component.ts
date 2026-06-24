@@ -100,6 +100,7 @@ export class AppComponent {
   private readonly router = inject(Router);
 
   readonly bootstrap = signal<WorkspaceBootstrap | null>(null);
+  readonly refreshing = signal(true);
   readonly workspaceMode = signal<WorkspaceMode>("job_search");
   readonly selectedNav = signal<NavItem>(this.inferInitialNav());
   readonly backupHealth = signal<"ok" | "degraded" | "optional">("optional");
@@ -999,75 +1000,80 @@ export class AppComponent {
   }
 
   async refresh() {
-    const bootstrap = this.normalizeBootstrap(await this.api.workspaceBootstrap().catch(() => this.fallbackBootstrap()));
-    this.bootstrap.set(bootstrap);
-    this.workspaceMode.set(bootstrap.mode);
-    this.applyWorkspaceModeMetadata(bootstrap.mode);
-    this.applyDocumentMetadata();
-    this.initializeDemoGuide(bootstrap);
-    this.ensureAllowedNav();
+    this.refreshing.set(true);
+    try {
+      const bootstrap = this.normalizeBootstrap(await this.api.workspaceBootstrap().catch(() => this.fallbackBootstrap()));
+      this.bootstrap.set(bootstrap);
+      this.workspaceMode.set(bootstrap.mode);
+      this.applyWorkspaceModeMetadata(bootstrap.mode);
+      this.applyDocumentMetadata();
+      this.initializeDemoGuide(bootstrap);
+      this.ensureAllowedNav();
 
-    const templateKey = bootstrap.templateKey;
-    const [
-      health,
-      queue,
-      tasks,
-      events,
-      views,
-      objectTypes,
-      jobApplications,
-      jobJobs,
-      jobInterviews,
-      jobSearchSetup,
-      jobContacts,
-      cvRecords,
-      outreachLeads,
-      outreachPeople,
-      outreachCompanies
-    ] = await Promise.all([
-      this.api.health().catch(() => ({ status: "degraded" as const, backup: { required: true } } as HealthResponse)),
-      this.api.listDueTasks().catch(() => []),
-      this.api.listTasks().catch(() => []),
-      this.api.listEvents().catch(() => []),
-      this.api.listViews(templateKey).catch(() => []),
-      this.api.listObjectTypes(templateKey).catch(() => []),
-      templateKey === "job_search" ? this.api.runView("job_search.applications").catch(() => null) : Promise.resolve(null),
-      templateKey === "job_search" ? this.api.runView("job_search.jobs").catch(() => null) : Promise.resolve(null),
-      templateKey === "job_search" ? this.api.runView("job_search.interviews").catch(() => null) : Promise.resolve(null),
-      templateKey === "job_search" ? this.api.getJobSearchSetup().catch(() => null) : Promise.resolve(null),
-      templateKey === "job_search" ? this.api.listXrmRecords({ objectType: "job_contact", limit: 100 }).catch(() => []) : Promise.resolve([]),
-      templateKey === "job_search" ? this.api.listXrmRecords({ objectType: "cv_version", limit: 100 }).catch(() => []) : Promise.resolve([]),
-      this.api.listXrmRecords({ objectType: "lead", limit: 100 }).catch(() => []),
-      this.api.listXrmRecords({ objectType: "person", limit: 100 }).catch(() => []),
-      this.api.listXrmRecords({ objectType: "company", limit: 100 }).catch(() => [])
-    ]);
+      const templateKey = bootstrap.templateKey;
+      const [
+        health,
+        queue,
+        tasks,
+        events,
+        views,
+        objectTypes,
+        jobApplications,
+        jobJobs,
+        jobInterviews,
+        jobSearchSetup,
+        jobContacts,
+        cvRecords,
+        outreachLeads,
+        outreachPeople,
+        outreachCompanies
+      ] = await Promise.all([
+        this.api.health().catch(() => ({ status: "degraded" as const, backup: { required: true } } as HealthResponse)),
+        this.api.listDueTasks().catch(() => []),
+        this.api.listTasks().catch(() => []),
+        this.api.listEvents().catch(() => []),
+        this.api.listViews(templateKey).catch(() => []),
+        this.api.listObjectTypes(templateKey).catch(() => []),
+        templateKey === "job_search" ? this.api.runView("job_search.applications").catch(() => null) : Promise.resolve(null),
+        templateKey === "job_search" ? this.api.runView("job_search.jobs").catch(() => null) : Promise.resolve(null),
+        templateKey === "job_search" ? this.api.runView("job_search.interviews").catch(() => null) : Promise.resolve(null),
+        templateKey === "job_search" ? this.api.getJobSearchSetup().catch(() => null) : Promise.resolve(null),
+        templateKey === "job_search" ? this.api.listXrmRecords({ objectType: "job_contact", limit: 100 }).catch(() => []) : Promise.resolve([]),
+        templateKey === "job_search" ? this.api.listXrmRecords({ objectType: "cv_version", limit: 100 }).catch(() => []) : Promise.resolve([]),
+        this.api.listXrmRecords({ objectType: "lead", limit: 100 }).catch(() => []),
+        this.api.listXrmRecords({ objectType: "person", limit: 100 }).catch(() => []),
+        this.api.listXrmRecords({ objectType: "company", limit: 100 }).catch(() => [])
+      ]);
 
-    this.backupHealth.set(health.backup?.required === false ? "optional" : health.status === "ok" ? "ok" : "degraded");
-    this.queue.set(queue);
-    this.tasks.set(tasks);
-    this.events.set(events);
-    this.views.set(views);
-    this.objectTypes.set(objectTypes);
-    this.jobApplications.set(jobApplications);
-    this.jobJobs.set(jobJobs);
-    this.jobInterviews.set(jobInterviews);
-    this.jobSearchSetup.set(jobSearchSetup);
-    this.jobContacts.set(jobContacts);
-    this.cvRecords.set(cvRecords.filter((record) => this.recordBelongsToMode(record, "job_search")));
-    this.outreachLeadRecords.set(outreachLeads.filter((record) => this.recordBelongsToMode(record, "outreach")));
-    this.outreachPeopleRecords.set(outreachPeople.filter((record) => this.recordBelongsToMode(record, "outreach")));
-    this.outreachCompanyRecords.set(outreachCompanies.filter((record) => this.recordBelongsToMode(record, "outreach")));
+      this.backupHealth.set(health.backup?.required === false ? "optional" : health.status === "ok" ? "ok" : "degraded");
+      this.queue.set(queue);
+      this.tasks.set(tasks);
+      this.events.set(events);
+      this.views.set(views);
+      this.objectTypes.set(objectTypes);
+      this.jobApplications.set(jobApplications);
+      this.jobJobs.set(jobJobs);
+      this.jobInterviews.set(jobInterviews);
+      this.jobSearchSetup.set(jobSearchSetup);
+      this.jobContacts.set(jobContacts);
+      this.cvRecords.set(cvRecords.filter((record) => this.recordBelongsToMode(record, "job_search")));
+      this.outreachLeadRecords.set(outreachLeads.filter((record) => this.recordBelongsToMode(record, "outreach")));
+      this.outreachPeopleRecords.set(outreachPeople.filter((record) => this.recordBelongsToMode(record, "outreach")));
+      this.outreachCompanyRecords.set(outreachCompanies.filter((record) => this.recordBelongsToMode(record, "outreach")));
 
-    if (!this.selectedRecordObjectType()) {
-      this.selectedRecordObjectType.set(this.uiConfig().primaryAction.objectType);
+      if (!this.selectedRecordObjectType()) {
+        this.selectedRecordObjectType.set(this.uiConfig().primaryAction.objectType);
+      }
+
+      const pending = this.pendingRecordId();
+      if (pending) {
+        this.pendingRecordId.set(null);
+        await this.selectRecordById(pending, false);
+      }
+      this.syncSelectedFromLists();
+    } finally {
+      this.refreshing.set(false);
     }
-
-    const pending = this.pendingRecordId();
-    if (pending) {
-      this.pendingRecordId.set(null);
-      await this.selectRecordById(pending, false);
-    }
-    this.syncSelectedFromLists();
   }
 
   selectNav(item: NavItem) {
